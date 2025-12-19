@@ -247,6 +247,28 @@ export function RoundPlay() {
     return total;
   };
 
+  // Calculate Stableford points for a player (always, for personal info)
+  const getStablefordPoints = (player: Player): number => {
+    if (!course || !round?.useHandicap) return 0;
+
+    let total = 0;
+    const completedHoles = round.completedHoles || [];
+
+    completedHoles.forEach((holeNum) => {
+      const score = player.scores[holeNum];
+      const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
+      if (score && holeData) {
+        total += calculateStablefordPoints(
+          score.strokes,
+          holeData.par,
+          player.playingHandicap,
+          holeData.handicap
+        );
+      }
+    });
+    return total;
+  };
+
   // Get Stableford points for current hole
   const getHolePoints = (player: Player): number => {
     if (!currentHoleData || !round?.useHandicap) return 0;
@@ -478,6 +500,11 @@ export function RoundPlay() {
                 <Badge variant="outline" className="text-lg">
                   {getTotalPoints(player)} pts
                 </Badge>
+                {round.gameMode === "sindicato" && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Stableford: {getStablefordPoints(player)}
+                  </div>
+                )}
               </div>
             </div>
 

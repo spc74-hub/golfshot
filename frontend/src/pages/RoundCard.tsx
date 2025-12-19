@@ -56,11 +56,29 @@ export function RoundCard() {
     );
   };
 
+  // Calculate Stableford points for a specific hole (always, regardless of game mode)
+  const getStablefordPoints = (player: Player, holeNum: number): number | null => {
+    if (!course || !round?.useHandicap) return null;
+    const score = player.scores[holeNum];
+    if (!score) return null;
+
+    const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
+    if (!holeData) return null;
+
+    return calculateStablefordPoints(
+      score.strokes,
+      holeData.par,
+      player.playingHandicap,
+      holeData.handicap
+    );
+  };
+
   // Calculate totals for a set of holes
   const getHolesTotals = (player: Player, holeNumbers: number[]) => {
     let strokes = 0;
     let putts = 0;
     let points = 0;
+    let stablefordPoints = 0;
     let holesPlayed = 0;
 
     holeNumbers.forEach(holeNum => {
@@ -70,11 +88,13 @@ export function RoundCard() {
         putts += score.putts;
         const holePoints = getHolePoints(player, holeNum);
         if (holePoints !== null) points += holePoints;
+        const stbfPoints = getStablefordPoints(player, holeNum);
+        if (stbfPoints !== null) stablefordPoints += stbfPoints;
         holesPlayed++;
       }
     });
 
-    return { strokes, putts, points, holesPlayed };
+    return { strokes, putts, points, stablefordPoints, holesPlayed };
   };
 
   // Get par for a set of holes
@@ -159,6 +179,7 @@ export function RoundCard() {
           strokes: front9Totals.strokes + back9Totals.strokes,
           putts: front9Totals.putts + back9Totals.putts,
           points: front9Totals.points + back9Totals.points,
+          stablefordPoints: front9Totals.stablefordPoints + back9Totals.stablefordPoints,
           holesPlayed: front9Totals.holesPlayed + back9Totals.holesPlayed,
         };
 
@@ -179,6 +200,11 @@ export function RoundCard() {
                   <p className="text-sm text-muted-foreground">
                     {totalTotals.strokes} golpes ({totalTotals.strokes - totalPar >= 0 ? "+" : ""}{totalTotals.strokes - totalPar})
                   </p>
+                  {round.gameMode === "sindicato" && (
+                    <p className="text-xs text-muted-foreground">
+                      Stableford: {totalTotals.stablefordPoints} pts
+                    </p>
+                  )}
                 </div>
               </div>
             </CardHeader>
