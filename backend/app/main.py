@@ -1,3 +1,4 @@
+import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
@@ -5,10 +6,10 @@ from app.routers import auth, users, courses, rounds, admin
 
 settings = get_settings()
 
-# Log CORS configuration at startup
+# Log CORS configuration at startup (flush immediately)
 cors_origins = settings.get_cors_origins()
-print(f"[CORS] Configured origins: {cors_origins}")
-print(f"[CORS] Frontend URL from env: '{settings.frontend_url}'")
+print(f"[CORS] Configured origins: {cors_origins}", flush=True)
+print(f"[CORS] Frontend URL from env: '{settings.frontend_url}'", flush=True)
 
 app = FastAPI(
     title="Golf Shot API",

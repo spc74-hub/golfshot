@@ -134,8 +134,8 @@ class RoundResponse(BaseModel):
     od_id: int
     od_user_id: str
     is_finished: bool
-    course_id: str
-    course_name: str
+    course_id: Optional[str] = None
+    course_name: Optional[str] = None
     round_date: str
     course_length: Literal["18", "front9", "back9"]
     game_mode: Literal["stableford", "stroke", "sindicato", "team"]
