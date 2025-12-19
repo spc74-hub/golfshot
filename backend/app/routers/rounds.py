@@ -397,7 +397,6 @@ async def save_imported_round(
             # Create new course from extracted data
             tee_played = course_info.get("tee_played", {})
             new_course = {
-                "user_id": current_user.id,
                 "name": course_name,
                 "holes": num_holes,
                 "par": totals.get("par", 72),
