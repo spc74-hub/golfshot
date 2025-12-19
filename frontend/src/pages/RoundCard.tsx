@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useRound } from "@/hooks/useRounds";
 import { useCourse } from "@/hooks/useCourses";
-import { calculateStablefordPoints, getHolesForCourseLength, getScoreResultVsPar } from "@/lib/calculations";
+import { calculateStablefordPoints, calculateSindicatoPoints, getHolesForCourseLength, getScoreResultVsPar } from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,17 @@ export function RoundCard() {
 
     const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
     if (!holeData) return null;
+
+    if (round.gameMode === "sindicato") {
+      // For Sindicato mode, calculate points based on position
+      const sindicatoPoints = calculateSindicatoPoints(
+        round.players,
+        holeNum,
+        course.holesData,
+        round.sindicatoPoints || [4, 2, 1, 0]
+      );
+      return sindicatoPoints.get(player.id) || 0;
+    }
 
     return calculateStablefordPoints(
       score.strokes,

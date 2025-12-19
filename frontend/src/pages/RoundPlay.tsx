@@ -4,6 +4,7 @@ import { useRound, useUpdateRound, useFinishRound, useDeleteRound } from "@/hook
 import { useCourse } from "@/hooks/useCourses";
 import {
   calculateStablefordPoints,
+  calculateSindicatoPoints,
   getScoreResultVsPar,
   getHolesForCourseLength,
 } from "@/lib/calculations";
@@ -217,18 +218,32 @@ export function RoundPlay() {
     let total = 0;
     const completedHoles = round.completedHoles || [];
 
-    completedHoles.forEach((holeNum) => {
-      const score = player.scores[holeNum];
-      const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
-      if (score && holeData) {
-        total += calculateStablefordPoints(
-          score.strokes,
-          holeData.par,
-          player.playingHandicap,
-          holeData.handicap
+    if (round.gameMode === "sindicato") {
+      // For Sindicato mode, calculate points based on position in each hole
+      completedHoles.forEach((holeNum) => {
+        const sindicatoPoints = calculateSindicatoPoints(
+          round.players,
+          holeNum,
+          course.holesData,
+          round.sindicatoPoints || [4, 2, 1, 0]
         );
-      }
-    });
+        total += sindicatoPoints.get(player.id) || 0;
+      });
+    } else {
+      // For Stableford and other modes
+      completedHoles.forEach((holeNum) => {
+        const score = player.scores[holeNum];
+        const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
+        if (score && holeData) {
+          total += calculateStablefordPoints(
+            score.strokes,
+            holeData.par,
+            player.playingHandicap,
+            holeData.handicap
+          );
+        }
+      });
+    }
     return total;
   };
 
