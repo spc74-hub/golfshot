@@ -1,8 +1,7 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 from functools import lru_cache
 from pathlib import Path
-import os
 
 
 class Settings(BaseSettings):
@@ -12,6 +11,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""  # Anthropic API key for Claude vision
     cors_origins: list[str] = ["http://localhost:5174", "http://localhost:5173", "http://localhost:3000"]
     frontend_url: str = ""  # Production frontend URL
+
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).parent.parent / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -26,9 +31,6 @@ class Settings(BaseSettings):
         if self.frontend_url and self.frontend_url not in origins:
             origins.append(self.frontend_url)
         return origins
-
-    class Config:
-        env_file = Path(__file__).parent.parent / ".env"
 
 
 @lru_cache()

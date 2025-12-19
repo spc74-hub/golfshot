@@ -5,6 +5,11 @@ from app.routers import auth, users, courses, rounds, admin
 
 settings = get_settings()
 
+# Log CORS configuration at startup
+cors_origins = settings.get_cors_origins()
+print(f"[CORS] Configured origins: {cors_origins}")
+print(f"[CORS] Frontend URL from env: '{settings.frontend_url}'")
+
 app = FastAPI(
     title="Golf Shot API",
     description="API for Golf Shot - Golf round tracking application",
@@ -14,7 +19,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.get_cors_origins(),
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
