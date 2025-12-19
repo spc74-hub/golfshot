@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { roundsApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Upload, ImageIcon, Check, X, ArrowLeft, Loader2 } from "lucide-react";
+import { Upload, ImageIcon, Check, X, ArrowLeft, Loader2, Clipboard } from "lucide-react";
 import type { ImportedRoundData } from "@/types";
 
 export function ImportRound() {
@@ -42,6 +42,53 @@ export function ImportRound() {
       setError(null);
     }
   };
+
+  const handlePaste = async () => {
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find(type => type.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const file = new File([blob], "pasted-image.png", { type: imageType });
+          setSelectedFile(file);
+          setPreviewUrl(URL.createObjectURL(blob));
+          setExtractedData(null);
+          setError(null);
+          return;
+        }
+      }
+      setError("No hay imagen en el portapapeles");
+    } catch (err) {
+      setError("No se pudo acceder al portapapeles. Intenta con Ctrl+V o Cmd+V");
+    }
+  };
+
+  // Handle paste event on the page
+  useEffect(() => {
+    const handlePasteEvent = async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          if (blob) {
+            const file = new File([blob], "pasted-image.png", { type: item.type });
+            setSelectedFile(file);
+            setPreviewUrl(URL.createObjectURL(blob));
+            setExtractedData(null);
+            setError(null);
+          }
+          return;
+        }
+      }
+    };
+
+    document.addEventListener("paste", handlePasteEvent);
+    return () => document.removeEventListener("paste", handlePasteEvent);
+  }, []);
 
   const handleExtract = async () => {
     if (!selectedFile) return;
@@ -133,7 +180,7 @@ export function ImportRound() {
         <CardHeader>
           <CardTitle className="text-lg">1. Seleccionar Imagen</CardTitle>
           <CardDescription>
-            Sube una captura de pantalla de tu tarjeta de puntuacion
+            Sube o pega una captura de pantalla de tu tarjeta de puntuacion
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -156,7 +203,7 @@ export function ImportRound() {
               <div className="space-y-2">
                 <ImageIcon className="h-12 w-12 mx-auto text-muted-foreground" />
                 <p className="text-muted-foreground">
-                  Click para seleccionar una imagen
+                  Click para seleccionar o usa Ctrl+V / Cmd+V para pegar
                 </p>
                 <p className="text-xs text-muted-foreground">
                   JPG, PNG o WEBP
@@ -171,6 +218,25 @@ export function ImportRound() {
             className="hidden"
             onChange={handleFileChange}
           />
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={handlePaste}
+              className="flex-1"
+            >
+              <Clipboard className="h-4 w-4 mr-2" />
+              Pegar del portapapeles
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex-1"
+            >
+              <ImageIcon className="h-4 w-4 mr-2" />
+              Seleccionar archivo
+            </Button>
+          </div>
 
           {selectedFile && !extractedData && (
             <Button
