@@ -148,7 +148,7 @@ export const authApi = {
 // Users API
 export const usersApi = {
   list: async (): Promise<User[]> => {
-    return fetchWithAuth("/users");
+    return fetchWithAuth("/users/");
   },
 
   get: async (id: string): Promise<User> => {
@@ -170,7 +170,7 @@ export const usersApi = {
 // Courses API
 export const coursesApi = {
   list: async (): Promise<Course[]> => {
-    const data = await fetchWithAuth("/courses");
+    const data = await fetchWithAuth("/courses/");
     return (data as Record<string, unknown>[]).map(transformCourse);
   },
 
@@ -180,7 +180,7 @@ export const coursesApi = {
   },
 
   create: async (data: CreateCourseInput): Promise<Course> => {
-    const result = await fetchWithAuth("/courses", {
+    const result = await fetchWithAuth("/courses/", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -237,7 +237,7 @@ export const coursesApi = {
 // Rounds API
 export const roundsApi = {
   list: async (): Promise<Round[]> => {
-    const data = await fetchWithAuth("/rounds");
+    const data = await fetchWithAuth("/rounds/");
     return (data as Record<string, unknown>[]).map(transformRound);
   },
 
@@ -247,7 +247,7 @@ export const roundsApi = {
   },
 
   create: async (data: CreateRoundInput | Record<string, unknown>): Promise<Round> => {
-    const result = await fetchWithAuth("/rounds", {
+    const result = await fetchWithAuth("/rounds/", {
       method: "POST",
       body: JSON.stringify(data),
     });
