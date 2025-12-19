@@ -8,7 +8,22 @@ import type {
   AdminStats,
 } from "@/types";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Get API URL from environment or use default
+// In production, if VITE_API_URL is not set, derive it from the current origin
+function getApiUrl(): string {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    return envUrl;
+  }
+  // In production (HTTPS), default to the backend subdomain
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    // Assuming backend is at golfshot.up.railway.app when frontend is at golfshotf.up.railway.app
+    return 'https://golfshot.up.railway.app';
+  }
+  return "http://localhost:8000";
+}
+
+const API_URL = getApiUrl();
 
 // Transform backend Course (snake_case) to frontend Course (camelCase)
 function transformCourse(backendCourse: Record<string, unknown>): Course {
