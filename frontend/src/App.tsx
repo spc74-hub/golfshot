@@ -13,6 +13,7 @@ import { Courses } from "@/pages/Courses";
 import { RoundSetup } from "@/pages/RoundSetup";
 import { RoundPlay } from "@/pages/RoundPlay";
 import { RoundCard } from "@/pages/RoundCard";
+import { ImportRound } from "@/pages/ImportRound";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -91,6 +92,16 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <RoundCard />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/round/import"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <ImportRound />
                   </Layout>
                 </ProtectedRoute>
               }

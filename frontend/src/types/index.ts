@@ -62,6 +62,7 @@ export interface Round {
   odId: number;
   odUserId: string;
   isFinished: boolean;
+  isImported?: boolean;
   courseId: string;
   courseName: string;
   roundDate: string;
@@ -208,4 +209,37 @@ export interface ExternalSearchResponse {
   query: string;
   count: number;
   courses: ExternalCourseResult[];
+}
+
+// Import round data from scorecard image
+export interface ImportedHoleData {
+  number: number;
+  par: number;
+  handicap: number;
+  strokes: number;
+  distance: number;
+}
+
+export interface ImportedRoundData {
+  course: {
+    name: string;
+    location: string;
+    tee_played: {
+      name: string;
+      slope: number;
+      rating: number;
+    };
+  };
+  round: {
+    date: string;
+    player_name: string;
+    handicap_index: number;
+  };
+  holes: number;
+  holes_data: ImportedHoleData[];
+  totals: {
+    strokes: number;
+    par: number;
+    stableford_points: number;
+  };
 }

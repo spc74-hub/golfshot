@@ -18,7 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Play, Trash2, Eye, Edit, Flag } from "lucide-react";
+import { Play, Trash2, Eye, Edit, Flag, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useState } from "react";
@@ -45,9 +45,17 @@ export function History() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Historial de Partidas</h1>
-        <p className="text-muted-foreground">Todas tus partidas de golf</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Historial de Partidas</h1>
+          <p className="text-muted-foreground">Todas tus partidas de golf</p>
+        </div>
+        <Link to="/round/import">
+          <Button variant="outline" size="sm">
+            <Upload className="h-4 w-4 mr-2" />
+            Importar
+          </Button>
+        </Link>
       </div>
 
       {rounds && rounds.length > 0 ? (
@@ -57,14 +65,22 @@ export function History() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">{round.courseName}</CardTitle>
-                  {round.isFinished ? (
-                    <Badge>Finalizada</Badge>
-                  ) : (
-                    <Badge variant="secondary">
-                      <Play className="h-3 w-3 mr-1" />
-                      Hoyo {round.currentHole}
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {round.isImported && (
+                      <Badge variant="outline" className="text-xs">
+                        <Upload className="h-3 w-3 mr-1" />
+                        Importada
+                      </Badge>
+                    )}
+                    {round.isFinished ? (
+                      <Badge>Finalizada</Badge>
+                    ) : (
+                      <Badge variant="secondary">
+                        <Play className="h-3 w-3 mr-1" />
+                        Hoyo {round.currentHole}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <CardDescription>
                   {format(new Date(round.roundDate), "PPP", { locale: es })}

@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from app.models.schemas import RoundCreate, RoundUpdate, RoundResponse, UserResponse
 from app.services.supabase import get_supabase_client
+from app.services.round_ocr import extract_round_data
 from app.dependencies import get_current_user
 import uuid
 import time
+import base64
 
 router = APIRouter(prefix="/rounds", tags=["rounds"])
 
@@ -313,6 +315,180 @@ async def finish_round(
             .eq("id", round_id)
             .execute()
         )
+
+        return response.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+# Import round from image endpoints
+@router.post("/import/extract")
+async def extract_round_from_image(
+    file: UploadFile = File(...),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Extract round data from a scorecard image using AI."""
+    try:
+        # Validate file type
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be an image",
+            )
+
+        # Read and encode image
+        contents = await file.read()
+        image_base64 = base64.b64encode(contents).decode("utf-8")
+
+        # Extract data using Claude Vision
+        extracted_data = await extract_round_data(image_base64, file.content_type)
+
+        return {
+            "success": True,
+            "message": "Round data extracted successfully",
+            "round_data": extracted_data,
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to extract round data: {str(e)}",
+        )
+
+
+@router.post("/import/save", response_model=RoundResponse, status_code=status.HTTP_201_CREATED)
+async def save_imported_round(
+    import_data: dict,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Save an imported round from extracted scorecard data."""
+    supabase = get_supabase_client()
+
+    try:
+        course_info = import_data.get("course", {})
+        round_info = import_data.get("round", {})
+        holes_data = import_data.get("holes_data", [])
+        num_holes = import_data.get("holes", 18)
+        totals = import_data.get("totals", {})
+
+        # Check if course exists or create it
+        course_name = course_info.get("name", "Campo Importado")
+        course_response = (
+            supabase.table("courses")
+            .select("*")
+            .eq("name", course_name)
+            .execute()
+        )
+
+        if course_response.data:
+            # Use existing course
+            course = course_response.data[0]
+            course_id = course["id"]
+        else:
+            # Create new course from extracted data
+            tee_played = course_info.get("tee_played", {})
+            new_course = {
+                "user_id": current_user.id,
+                "name": course_name,
+                "holes": num_holes,
+                "par": totals.get("par", 72),
+                "tees": [{
+                    "name": tee_played.get("name", "Standard"),
+                    "slope": tee_played.get("slope", 113),
+                    "rating": tee_played.get("rating", 72.0),
+                }],
+                "holes_data": [
+                    {
+                        "number": h.get("number", i + 1),
+                        "par": h.get("par", 4),
+                        "handicap": h.get("handicap", i + 1),
+                        "distance": h.get("distance", 350),
+                    }
+                    for i, h in enumerate(holes_data)
+                ],
+            }
+
+            course_create_response = supabase.table("courses").insert(new_course).execute()
+            if not course_create_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to create course",
+                )
+            course = course_create_response.data[0]
+            course_id = course["id"]
+
+        # Get the tee for playing handicap calculation
+        tee_played = course_info.get("tee_played", {})
+        tee_slope = tee_played.get("slope", 113)
+        player_handicap_index = round_info.get("handicap_index", 24.0)
+        playing_handicap = calculate_playing_handicap(player_handicap_index, tee_slope)
+
+        # Build scores from holes_data
+        scores = {}
+        completed_holes = []
+        for hole in holes_data:
+            hole_num = hole.get("number")
+            strokes = hole.get("strokes")
+            if hole_num and strokes:
+                scores[str(hole_num)] = {
+                    "strokes": strokes,
+                    "putts": 0,  # Not available from import
+                }
+                completed_holes.append(hole_num)
+
+        # Create the player
+        player = {
+            "id": str(uuid.uuid4()),
+            "name": round_info.get("player_name", current_user.display_name or "Jugador"),
+            "od_handicap_index": player_handicap_index,
+            "tee_box": tee_played.get("name", "Standard"),
+            "team": None,
+            "playing_handicap": playing_handicap,
+            "scores": scores,
+        }
+
+        # Determine course length
+        course_length = "18" if num_holes == 18 else "front9"
+
+        # Create the imported round
+        new_round = {
+            "user_id": current_user.id,
+            "od_id": int(time.time() * 1000),
+            "od_user_id": current_user.id,
+            "course_id": course_id,
+            "course_name": course_name,
+            "round_date": round_info.get("date", time.strftime("%Y-%m-%d")),
+            "course_length": course_length,
+            "game_mode": "stableford",  # Default for imported rounds
+            "use_handicap": True,
+            "handicap_percentage": 100,
+            "sindicato_points": None,
+            "team_mode": None,
+            "best_ball_points": None,
+            "worst_ball_points": None,
+            "current_hole": num_holes,
+            "completed_holes": completed_holes,
+            "players": [player],
+            "is_finished": True,
+            "is_imported": True,  # Mark as imported
+        }
+
+        response = supabase.table("rounds").insert(new_round).execute()
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to save imported round",
+            )
 
         return response.data[0]
     except HTTPException:

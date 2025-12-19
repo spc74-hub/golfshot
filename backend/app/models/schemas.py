@@ -134,6 +134,7 @@ class RoundResponse(BaseModel):
     od_id: int
     od_user_id: str
     is_finished: bool
+    is_imported: Optional[bool] = False
     course_id: Optional[str] = None
     course_name: Optional[str] = None
     round_date: str

@@ -6,6 +6,7 @@ import type {
   UpdateRoundInput,
   User,
   AdminStats,
+  ImportedRoundData,
 } from "@/types";
 
 // Get API URL from environment or use default
@@ -59,6 +60,7 @@ function transformRound(backendRound: Record<string, unknown>): Round {
     odId: (backendRound.od_id ?? backendRound.odId) as number,
     odUserId: (backendRound.od_user_id ?? backendRound.odUserId) as string,
     isFinished: (backendRound.is_finished ?? backendRound.isFinished) as boolean,
+    isImported: (backendRound.is_imported ?? backendRound.isImported) as boolean | undefined,
     courseId: (backendRound.course_id ?? backendRound.courseId) as string,
     courseName: (backendRound.course_name ?? backendRound.courseName) as string,
     roundDate: (backendRound.round_date ?? backendRound.roundDate) as string,
@@ -282,6 +284,36 @@ export const roundsApi = {
 
   finish: async (id: string): Promise<Round> => {
     const result = await fetchWithAuth(`/rounds/${id}/finish`, { method: "PATCH" });
+    return transformRound(result as Record<string, unknown>);
+  },
+
+  // Import round from image
+  extractFromImage: async (file: File): Promise<{ success: boolean; message: string; round_data: ImportedRoundData }> => {
+    const token = localStorage.getItem("access_token");
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`${API_URL}/rounds/import/extract`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: "An error occurred" }));
+      throw new Error(error.detail || error.message || "Failed to extract round data");
+    }
+
+    return response.json();
+  },
+
+  saveImported: async (roundData: ImportedRoundData): Promise<Round> => {
+    const result = await fetchWithAuth("/rounds/import/save", {
+      method: "POST",
+      body: JSON.stringify(roundData),
+    });
     return transformRound(result as Record<string, unknown>);
   },
 };
