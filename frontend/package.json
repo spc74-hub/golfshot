@@ -1,13 +1,14 @@
 {
-  "name": "frontend",
+  "name": "golfshot",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "serve dist -s -l $PORT"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -37,6 +38,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "serve": "^14.2.4",
     "@eslint/js": "^9.39.1",
     "@tailwindcss/postcss": "^4.1.17",
     "@tailwindcss/vite": "^4.1.17",
