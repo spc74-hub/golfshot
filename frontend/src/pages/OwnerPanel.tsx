@@ -140,19 +140,20 @@ export function OwnerPanel() {
 
   const openLinkDialog = (user: UserWithStats) => {
     setLinkDialog(user);
-    setSelectedPlayerId(user.linkedPlayerId || "");
+    setSelectedPlayerId(user.linkedPlayerId || "none");
   };
 
   const handleLinkPlayer = async () => {
     if (!linkDialog) return;
     try {
-      await ownerApi.linkPlayer(linkDialog.id, selectedPlayerId || null);
-      const linkedPlayer = players.find(p => p.id === selectedPlayerId);
+      const playerIdToLink = selectedPlayerId === "none" ? null : selectedPlayerId;
+      await ownerApi.linkPlayer(linkDialog.id, playerIdToLink);
+      const linkedPlayer = playerIdToLink ? players.find(p => p.id === playerIdToLink) : null;
       setUsers(users.map(u =>
         u.id === linkDialog.id
           ? {
               ...u,
-              linkedPlayerId: selectedPlayerId || null,
+              linkedPlayerId: playerIdToLink,
               linkedPlayerName: linkedPlayer?.name || null,
             }
           : u
@@ -480,7 +481,7 @@ export function OwnerPanel() {
               <SelectValue placeholder="Selecciona un jugador" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Sin vincular</SelectItem>
+              <SelectItem value="none">Sin vincular</SelectItem>
               {players.map((player) => (
                 <SelectItem key={player.id} value={player.id}>
                   {player.name} (HCP: {player.handicapIndex})
