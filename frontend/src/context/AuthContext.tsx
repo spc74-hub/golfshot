@@ -18,7 +18,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [, setIsInitialized] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -31,13 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (session?.user) {
         localStorage.setItem("access_token", session.access_token);
-        fetchUserProfile(session.user.id, session.user.email || "").then(() => {
-          if (isMounted) setIsInitialized(true);
-        });
+        fetchUserProfile(session.user.id, session.user.email || "");
       } else {
         console.log("[Auth] No session, setting loading=false");
         setLoading(false);
-        setIsInitialized(true);
       }
     });
 
@@ -49,12 +46,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!isMounted) return;
 
       if (event === "SIGNED_IN" && session?.user) {
+        // Skip if profile already loaded successfully
+        if (profileLoaded) {
+          console.log("[Auth] Profile already loaded, skipping duplicate fetch");
+          return;
+        }
         console.log("[Auth] SIGNED_IN, fetching profile...");
         localStorage.setItem("access_token", session.access_token);
         await fetchUserProfile(session.user.id, session.user.email || "");
       } else if (event === "SIGNED_OUT") {
         console.log("[Auth] SIGNED_OUT");
         setUser(null);
+        setProfileLoaded(false);
         localStorage.removeItem("access_token");
       }
     });
@@ -63,9 +66,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [profileLoaded]);
 
   async function fetchUserProfile(userId: string, email: string) {
+    // Skip if profile already loaded successfully
+    if (profileLoaded) {
+      console.log("[Auth] Profile already loaded, skipping fetch");
+      return;
+    }
+
     console.log("[Auth] fetchUserProfile called:", { userId, email });
     try {
       // Add timeout to prevent hanging
@@ -99,20 +108,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         createdAt: profile?.created_at || new Date().toISOString(),
         updatedAt: profile?.updated_at || new Date().toISOString(),
       });
+
+      // Mark profile as loaded successfully
+      setProfileLoaded(true);
+      console.log("[Auth] Profile loaded successfully, role:", profile?.role);
     } catch (error) {
       console.error("Error fetching user profile:", error);
-      // Still set user with defaults so app doesn't break
-      setUser({
-        id: userId,
-        email,
-        displayName: null,
-        role: "user",
-        status: "active",
-        permissions: [],
-        linkedPlayerId: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      // Only set defaults if we don't have a user yet
+      if (!user) {
+        setUser({
+          id: userId,
+          email,
+          displayName: null,
+          role: "user",
+          status: "active",
+          permissions: [],
+          linkedPlayerId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
     } finally {
       console.log("[Auth] Setting loading=false");
       setLoading(false);
