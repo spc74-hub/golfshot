@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCourses } from "@/hooks/useCourses";
 import { useCreateRound } from "@/hooks/useRounds";
+import { usePlayers } from "@/hooks/usePlayers";
 import { useAuth } from "@/context/AuthContext";
 import { calculatePlayingHandicap } from "@/lib/calculations";
 import { coursesApi } from "@/lib/api";
@@ -33,7 +34,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Upload, ClipboardPaste, Image, Check, X } from "lucide-react";
+import { Loader2, Upload, ClipboardPaste, Image, Check, X, UserPlus } from "lucide-react";
 import type {
   Course,
   GameMode,
@@ -87,6 +88,7 @@ export function RoundSetup() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: courses, isLoading: coursesLoading, refetch: refetchCourses } = useCourses();
+  const { data: savedPlayers } = usePlayers();
   const createRound = useCreateRound();
 
   // Form state
@@ -311,6 +313,29 @@ export function RoundSetup() {
         tempId: crypto.randomUUID(),
         name: `Jugador ${playerNumber}`,
         odHandicapIndex: DEFAULT_HANDICAP_INDEX,
+        teeBox: defaultTee,
+        team: gameMode === "team" ? (players.length % 2 === 0 ? "A" : "B") : undefined,
+        playingHandicap: initialHDJ,
+      },
+    ]);
+  };
+
+  // Add saved player
+  const addSavedPlayer = (savedPlayer: { name: string; handicapIndex: number; preferredTee?: string }) => {
+    if (!selectedCourse) return;
+
+    const preferredTee = savedPlayer.preferredTee;
+    const defaultTee = selectedCourse.tees.find(t => t.name === preferredTee)?.name
+      || selectedCourse.tees[0]?.name
+      || "Amarillas";
+    const initialHDJ = calculateInitialHDJ(savedPlayer.handicapIndex, defaultTee);
+
+    setPlayers([
+      ...players,
+      {
+        tempId: crypto.randomUUID(),
+        name: savedPlayer.name,
+        odHandicapIndex: savedPlayer.handicapIndex,
         teeBox: defaultTee,
         team: gameMode === "team" ? (players.length % 2 === 0 ? "A" : "B") : undefined,
         playingHandicap: initialHDJ,
@@ -716,6 +741,29 @@ export function RoundSetup() {
                 </Button>
               )}
 
+              {/* Saved players quick add */}
+              {savedPlayers && savedPlayers.length > 0 && players.length < 4 && (
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Añadir jugador guardado</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {savedPlayers
+                      .filter(sp => !players.some(p => p.name === sp.name))
+                      .map(sp => (
+                        <Button
+                          key={sp.id}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => addSavedPlayer(sp)}
+                          className="text-xs"
+                        >
+                          <UserPlus className="h-3 w-3 mr-1" />
+                          {sp.name} ({sp.handicapIndex})
+                        </Button>
+                      ))}
+                  </div>
+                </div>
+              )}
+
               {players.map((player, index) => (
                 <div
                   key={player.tempId}
@@ -770,18 +818,28 @@ export function RoundSetup() {
                     <div className="space-y-1">
                       <Label className="text-xs">Handicap Index</Label>
                       <Input
-                        type="number"
-                        step="0.1"
-                        min={0}
-                        max={54}
-                        value={player.odHandicapIndex}
-                        onChange={(e) =>
-                          updatePlayer(
-                            player.tempId,
-                            "odHandicapIndex",
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
+                        type="text"
+                        inputMode="decimal"
+                        pattern="[0-9]*[.,]?[0-9]*"
+                        value={player.odHandicapIndex === 0 ? "" : player.odHandicapIndex}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(",", ".");
+                          if (value === "" || value === ".") {
+                            updatePlayer(player.tempId, "odHandicapIndex", 0);
+                          } else {
+                            const num = parseFloat(value);
+                            if (!isNaN(num) && num >= 0 && num <= 54) {
+                              updatePlayer(player.tempId, "odHandicapIndex", num);
+                            }
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const value = e.target.value.replace(",", ".");
+                          if (value === "" || value === ".") {
+                            updatePlayer(player.tempId, "odHandicapIndex", 0);
+                          }
+                        }}
+                        placeholder="0.0"
                       />
                     </div>
 

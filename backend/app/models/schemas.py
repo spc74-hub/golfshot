@@ -159,3 +159,26 @@ class AdminStats(BaseModel):
     total_rounds: int
     rounds_this_month: int
     total_courses: int
+
+
+# Saved Player schemas (for player management)
+class SavedPlayerCreate(BaseModel):
+    name: str
+    handicap_index: float = Field(ge=0, le=54, default=24.0)
+    preferred_tee: Optional[str] = None
+
+
+class SavedPlayerUpdate(BaseModel):
+    name: Optional[str] = None
+    handicap_index: Optional[float] = Field(default=None, ge=0, le=54)
+    preferred_tee: Optional[str] = None
+
+
+class SavedPlayerResponse(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    handicap_index: float
+    preferred_tee: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime

@@ -7,6 +7,9 @@ import type {
   User,
   AdminStats,
   ImportedRoundData,
+  SavedPlayer,
+  CreateSavedPlayerInput,
+  UpdateSavedPlayerInput,
 } from "@/types";
 
 // Get API URL from environment or use default
@@ -322,5 +325,60 @@ export const roundsApi = {
 export const adminApi = {
   getStats: async (): Promise<AdminStats> => {
     return fetchWithAuth("/admin/stats");
+  },
+};
+
+// Transform backend SavedPlayer (snake_case) to frontend SavedPlayer (camelCase)
+function transformSavedPlayer(backendPlayer: Record<string, unknown>): SavedPlayer {
+  return {
+    id: backendPlayer.id as string,
+    userId: (backendPlayer.user_id ?? backendPlayer.userId) as string,
+    name: backendPlayer.name as string,
+    handicapIndex: (backendPlayer.handicap_index ?? backendPlayer.handicapIndex) as number,
+    preferredTee: (backendPlayer.preferred_tee ?? backendPlayer.preferredTee) as string | undefined,
+    createdAt: backendPlayer.created_at as string,
+    updatedAt: backendPlayer.updated_at as string,
+  };
+}
+
+// Players API (saved players for quick selection)
+export const playersApi = {
+  list: async (): Promise<SavedPlayer[]> => {
+    const result = await fetchWithAuth("/players/");
+    return (result as Record<string, unknown>[]).map(transformSavedPlayer);
+  },
+
+  get: async (id: string): Promise<SavedPlayer> => {
+    const result = await fetchWithAuth(`/players/${id}`);
+    return transformSavedPlayer(result as Record<string, unknown>);
+  },
+
+  create: async (player: CreateSavedPlayerInput): Promise<SavedPlayer> => {
+    const result = await fetchWithAuth("/players/", {
+      method: "POST",
+      body: JSON.stringify({
+        name: player.name,
+        handicap_index: player.handicapIndex,
+        preferred_tee: player.preferredTee,
+      }),
+    });
+    return transformSavedPlayer(result as Record<string, unknown>);
+  },
+
+  update: async (id: string, player: UpdateSavedPlayerInput): Promise<SavedPlayer> => {
+    const body: Record<string, unknown> = {};
+    if (player.name !== undefined) body.name = player.name;
+    if (player.handicapIndex !== undefined) body.handicap_index = player.handicapIndex;
+    if (player.preferredTee !== undefined) body.preferred_tee = player.preferredTee;
+
+    const result = await fetchWithAuth(`/players/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return transformSavedPlayer(result as Record<string, unknown>);
+  },
+
+  delete: async (id: string): Promise<void> => {
+    return fetchWithAuth(`/players/${id}`, { method: "DELETE" });
   },
 };

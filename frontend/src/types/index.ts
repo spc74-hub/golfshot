@@ -243,3 +243,26 @@ export interface ImportedRoundData {
     stableford_points: number;
   };
 }
+
+// Saved Player types (for player management)
+export interface SavedPlayer {
+  id: string;
+  userId: string;
+  name: string;
+  handicapIndex: number;
+  preferredTee?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSavedPlayerInput {
+  name: string;
+  handicapIndex: number;
+  preferredTee?: string;
+}
+
+export interface UpdateSavedPlayerInput {
+  name?: string;
+  handicapIndex?: number;
+  preferredTee?: string;
+}

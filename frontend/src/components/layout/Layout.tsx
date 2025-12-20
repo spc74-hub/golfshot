@@ -9,6 +9,7 @@ import {
   LogOut,
   Flag,
   MapPin,
+  Users,
 } from "lucide-react";
 
 interface LayoutProps {
@@ -95,6 +96,15 @@ export function Layout({ children }: LayoutProps) {
             >
               <MapPin className="h-5 w-5" />
               <span className="text-xs mt-1">Campos</span>
+            </Link>
+            <Link
+              to="/players"
+              className={`flex flex-col items-center justify-center w-full h-full ${
+                isActive("/players") ? "text-primary" : "text-muted-foreground"
+              }`}
+            >
+              <Users className="h-5 w-5" />
+              <span className="text-xs mt-1">Jugadores</span>
             </Link>
             {isAdmin && (
               <Link
