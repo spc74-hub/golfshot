@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { roundsApi } from "@/lib/api";
+import { useCourses } from "@/hooks/useCourses";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Upload, ImageIcon, Check, X, ArrowLeft, Loader2, Clipboard } from "lucide-react";
-import type { ImportedRoundData, CourseLength } from "@/types";
+import type { ImportedRoundData, CourseLength, Course } from "@/types";
 
 export function ImportRound() {
   const navigate = useNavigate();
@@ -39,6 +40,10 @@ export function ImportRound() {
   const [isSaving, setIsSaving] = useState(false);
   const [extractedData, setExtractedData] = useState<ImportedRoundData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedExistingCourseId, setSelectedExistingCourseId] = useState<string | null>(null);
+
+  // Fetch existing courses for the selector
+  const { data: existingCourses = [] } = useCourses();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -102,14 +107,44 @@ export function ImportRound() {
 
     setIsExtracting(true);
     setError(null);
+    setSelectedExistingCourseId(null);
 
     try {
       const result = await roundsApi.extractFromImage(selectedFile);
       const roundData = result.round_data;
-      // Set default course_length based on number of holes
+
+      // Detect if holes are back 9 based on hole numbers in extracted data
+      const holeNumbers = roundData.holes_data.map((h: { number: number }) => h.number);
+      const hasBack9Numbers = holeNumbers.some((n: number) => n >= 10);
+
+      // Set default course_length based on number of holes and detected hole numbers
       if (!roundData.course_length) {
-        roundData.course_length = roundData.holes === 18 ? "18" : "front9";
+        if (roundData.holes === 18) {
+          roundData.course_length = "18";
+        } else if (hasBack9Numbers) {
+          roundData.course_length = "back9";
+        } else {
+          roundData.course_length = "front9";
+        }
       }
+
+      // Try to find a matching existing course
+      const extractedCourseName = roundData.course?.name?.toLowerCase() || "";
+      const matchingCourse = existingCourses.find((c: Course) => {
+        const existingName = c.name.toLowerCase();
+        // Check if one name contains the other (partial match)
+        return existingName.includes(extractedCourseName) ||
+               extractedCourseName.includes(existingName) ||
+               // Also try matching key words
+               extractedCourseName.split(/[\s-]+/).some((word: string) =>
+                 word.length > 3 && existingName.includes(word)
+               );
+      });
+
+      if (matchingCourse) {
+        setSelectedExistingCourseId(matchingCourse.id);
+      }
+
       setExtractedData(roundData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al extraer datos de la imagen");
@@ -125,7 +160,12 @@ export function ImportRound() {
     setError(null);
 
     try {
-      await roundsApi.saveImported(extractedData);
+      // Include existing course ID if selected
+      const dataToSave = {
+        ...extractedData,
+        existing_course_id: selectedExistingCourseId,
+      };
+      await roundsApi.saveImported(dataToSave);
       navigate("/history");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al guardar la ronda");
@@ -286,48 +326,99 @@ export function ImportRound() {
               {/* Course Info */}
               <div className="space-y-4">
                 <h3 className="font-semibold">Campo</h3>
-                <div className="grid grid-cols-2 gap-4">
+
+                {/* Existing course selector */}
+                {existingCourses.length > 0 && (
                   <div className="space-y-2">
-                    <Label>Nombre</Label>
-                    <Input
-                      value={extractedData.course.name}
-                      onChange={(e) => updateExtractedData("course.name", e.target.value)}
-                    />
+                    <Label>Usar campo existente</Label>
+                    <Select
+                      value={selectedExistingCourseId || "new"}
+                      onValueChange={(value) => {
+                        if (value === "new") {
+                          setSelectedExistingCourseId(null);
+                        } else {
+                          setSelectedExistingCourseId(value);
+                          // Update course name to match selected course
+                          const course = existingCourses.find((c: Course) => c.id === value);
+                          if (course && extractedData) {
+                            setExtractedData({
+                              ...extractedData,
+                              course: {
+                                ...extractedData.course,
+                                name: course.name,
+                              },
+                            });
+                          }
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar campo existente..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="new">
+                          + Crear nuevo campo
+                        </SelectItem>
+                        {existingCourses.map((course: Course) => (
+                          <SelectItem key={course.id} value={course.id}>
+                            {course.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedExistingCourseId && (
+                      <p className="text-xs text-muted-foreground">
+                        La ronda se asociara al campo existente "{existingCourses.find((c: Course) => c.id === selectedExistingCourseId)?.name}"
+                      </p>
+                    )}
                   </div>
-                  <div className="space-y-2">
-                    <Label>Ubicacion</Label>
-                    <Input
-                      value={extractedData.course.location}
-                      onChange={(e) => updateExtractedData("course.location", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Tee</Label>
-                    <Input
-                      value={extractedData.course.tee_played.name}
-                      onChange={(e) => updateExtractedData("course.tee_played.name", e.target.value)}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
+                )}
+
+                {/* Show course details only when creating new */}
+                {!selectedExistingCourseId && (
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Slope</Label>
+                      <Label>Nombre</Label>
                       <Input
-                        type="number"
-                        value={extractedData.course.tee_played.slope}
-                        onChange={(e) => updateExtractedData("course.tee_played.slope", parseInt(e.target.value))}
+                        value={extractedData.course.name}
+                        onChange={(e) => updateExtractedData("course.name", e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Rating</Label>
+                      <Label>Ubicacion</Label>
                       <Input
-                        type="number"
-                        step="0.1"
-                        value={extractedData.course.tee_played.rating}
-                        onChange={(e) => updateExtractedData("course.tee_played.rating", parseFloat(e.target.value))}
+                        value={extractedData.course.location}
+                        onChange={(e) => updateExtractedData("course.location", e.target.value)}
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label>Tee</Label>
+                      <Input
+                        value={extractedData.course.tee_played.name}
+                        onChange={(e) => updateExtractedData("course.tee_played.name", e.target.value)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        <Label>Slope</Label>
+                        <Input
+                          type="number"
+                          value={extractedData.course.tee_played.slope}
+                          onChange={(e) => updateExtractedData("course.tee_played.slope", parseInt(e.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Rating</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={extractedData.course.tee_played.rating}
+                          onChange={(e) => updateExtractedData("course.tee_played.rating", parseFloat(e.target.value))}
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Round Info */}

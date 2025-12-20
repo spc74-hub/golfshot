@@ -379,51 +379,69 @@ async def save_imported_round(
         holes_data = import_data.get("holes_data", [])
         num_holes = import_data.get("holes", 18)
         totals = import_data.get("totals", {})
+        existing_course_id = import_data.get("existing_course_id")
 
-        # Check if course exists or create it
+        course = None
+        course_id = None
         course_name = course_info.get("name", "Campo Importado")
-        course_response = (
-            supabase.table("courses")
-            .select("*")
-            .eq("name", course_name)
-            .execute()
-        )
 
-        if course_response.data:
-            # Use existing course
-            course = course_response.data[0]
-            course_id = course["id"]
-        else:
-            # Create new course from extracted data
-            tee_played = course_info.get("tee_played", {})
-            new_course = {
-                "name": course_name,
-                "holes": num_holes,
-                "par": totals.get("par", 72),
-                "tees": [{
-                    "name": tee_played.get("name", "Standard"),
-                    "slope": tee_played.get("slope", 113),
-                    "rating": tee_played.get("rating", 72.0),
-                }],
-                "holes_data": [
-                    {
-                        "number": h.get("number", i + 1),
-                        "par": h.get("par", 4),
-                        "handicap": h.get("handicap", i + 1),
-                        "distance": h.get("distance", 350),
-                    }
-                    for i, h in enumerate(holes_data)
-                ],
-            }
+        # If existing course ID is provided, use that course
+        if existing_course_id:
+            course_response = (
+                supabase.table("courses")
+                .select("*")
+                .eq("id", existing_course_id)
+                .execute()
+            )
+            if course_response.data:
+                course = course_response.data[0]
+                course_id = course["id"]
+                course_name = course["name"]
 
-            course_create_response = supabase.table("courses").insert(new_course).execute()
-            if not course_create_response.data:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Failed to create course",
-                )
-            course = course_create_response.data[0]
-            course_id = course["id"]
+        # If no existing course selected, check by name or create new
+        if not course_id:
+            course_response = (
+                supabase.table("courses")
+                .select("*")
+                .eq("name", course_name)
+                .execute()
+            )
+
+            if course_response.data:
+                # Use existing course
+                course = course_response.data[0]
+                course_id = course["id"]
+            else:
+                # Create new course from extracted data
+                tee_played = course_info.get("tee_played", {})
+                new_course = {
+                    "name": course_name,
+                    "holes": num_holes,
+                    "par": totals.get("par", 72),
+                    "tees": [{
+                        "name": tee_played.get("name", "Standard"),
+                        "slope": tee_played.get("slope", 113),
+                        "rating": tee_played.get("rating", 72.0),
+                    }],
+                    "holes_data": [
+                        {
+                            "number": h.get("number", i + 1),
+                            "par": h.get("par", 4),
+                            "handicap": h.get("handicap", i + 1),
+                            "distance": h.get("distance", 350),
+                        }
+                        for i, h in enumerate(holes_data)
+                    ],
+                }
+
+                course_create_response = supabase.table("courses").insert(new_course).execute()
+                if not course_create_response.data:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Failed to create course",
+                    )
+                course = course_create_response.data[0]
+                course_id = course["id"]
 
         # Get the tee for playing handicap calculation
         tee_played = course_info.get("tee_played", {})
