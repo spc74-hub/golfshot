@@ -54,7 +54,7 @@ export interface Player {
 
 // Round types
 export type CourseLength = "18" | "front9" | "back9";
-export type GameMode = "stableford" | "stroke" | "sindicato" | "team";
+export type GameMode = "stableford" | "stroke" | "sindicato" | "team" | "matchplay";
 export type TeamMode = "bestBall" | "goodBadBall";
 
 export interface Round {
@@ -149,6 +149,21 @@ export interface AdminStats {
   totalRounds: number;
   roundsThisMonth: number;
   totalCourses: number;
+}
+
+export interface UserStats {
+  totalRounds: number;
+  avgStrokesPar3: number | null;
+  avgStrokesPar4: number | null;
+  avgStrokesPar5: number | null;
+  avgPuttsPerRound: number | null;
+  avgStrokes9holes: number | null;
+  avgStrokes18holes: number | null;
+  avgStablefordPoints: number | null;
+  virtualHandicap: number | null;
+  bestRoundScore: number | null;
+  bestRoundDate: string | null;
+  bestRoundCourse: string | null;
 }
 
 export interface ScoreDistribution {

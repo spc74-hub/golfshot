@@ -2,7 +2,16 @@ import { useMemo } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useRound } from "@/hooks/useRounds";
 import { useCourse } from "@/hooks/useCourses";
-import { calculateStablefordPoints, calculateSindicatoPoints, getHolesForCourseLength, getScoreResultVsPar } from "@/lib/calculations";
+import {
+  calculateStablefordPoints,
+  calculateSindicatoPoints,
+  getHolesForCourseLength,
+  getScoreResultVsPar,
+  calculateMatchPlayScore,
+  formatMatchPlayScore,
+  formatMatchPlayFinalResult,
+  getMatchPlayHolesRemaining,
+} from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,19 +37,35 @@ export function RoundCard() {
   const front9 = useMemo(() => holes.filter(h => h <= 9), [holes]);
   const back9 = useMemo(() => holes.filter(h => h > 9), [holes]);
 
+  // Get the effective handicap for a player (when useHandicap is false, all use first player's handicap)
+  const getEffectiveHandicap = (player: Player): number => {
+    if (!round) return player.playingHandicap;
+    // When useHandicap is false, everyone uses the first player's handicap
+    if (!round.useHandicap) {
+      return round.players[0]?.playingHandicap || 0;
+    }
+    return player.playingHandicap;
+  };
+
   // Calculate points for a specific hole
   const getHolePoints = (player: Player, holeNum: number): number | null => {
-    if (!course || !round?.useHandicap) return null;
+    if (!course) return null;
     const score = player.scores[holeNum];
     if (!score) return null;
 
     const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
     if (!holeData) return null;
 
-    if (round.gameMode === "sindicato") {
-      // For Sindicato mode, calculate points based on position
+    const effectiveHandicap = getEffectiveHandicap(player);
+
+    if (round?.gameMode === "sindicato") {
+      // For Sindicato mode, we need to pass modified players with effective handicaps
+      const playersWithEffectiveHcp = round.players.map((p: Player) => ({
+        ...p,
+        playingHandicap: getEffectiveHandicap(p),
+      }));
       const sindicatoPoints = calculateSindicatoPoints(
-        round.players,
+        playersWithEffectiveHcp,
         holeNum,
         course.holesData,
         round.sindicatoPoints || [4, 2, 1, 0]
@@ -51,24 +76,26 @@ export function RoundCard() {
     return calculateStablefordPoints(
       score.strokes,
       holeData.par,
-      player.playingHandicap,
+      effectiveHandicap,
       holeData.handicap
     );
   };
 
   // Calculate Stableford points for a specific hole (always, regardless of game mode)
   const getStablefordPoints = (player: Player, holeNum: number): number | null => {
-    if (!course || !round?.useHandicap) return null;
+    if (!course) return null;
     const score = player.scores[holeNum];
     if (!score) return null;
 
     const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
     if (!holeData) return null;
 
+    const effectiveHandicap = getEffectiveHandicap(player);
+
     return calculateStablefordPoints(
       score.strokes,
       holeData.par,
-      player.playingHandicap,
+      effectiveHandicap,
       holeData.handicap
     );
   };
@@ -171,6 +198,89 @@ export function RoundCard() {
         )}
       </div>
 
+      {/* Match Play Result */}
+      {round.gameMode === "matchplay" && round.players.length === 2 && course && (
+        <Card className="bg-primary/5 border-primary/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-center text-lg">Resultado Match Play</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              // Use effective handicaps for Match Play scoring
+              const player1WithEffectiveHcp = {
+                ...round.players[0],
+                playingHandicap: getEffectiveHandicap(round.players[0]),
+              };
+              const player2WithEffectiveHcp = {
+                ...round.players[1],
+                playingHandicap: getEffectiveHandicap(round.players[1]),
+              };
+              const matchScore = calculateMatchPlayScore(
+                player1WithEffectiveHcp,
+                player2WithEffectiveHcp,
+                round.completedHoles || [],
+                course.holesData
+              );
+              const holesRemaining = getMatchPlayHolesRemaining(
+                round.courseLength,
+                round.completedHoles || []
+              );
+              const player1EffectiveHcp = getEffectiveHandicap(round.players[0]);
+              const player2EffectiveHcp = getEffectiveHandicap(round.players[1]);
+              const player1Stableford = holes.reduce((sum, h) => {
+                const score = round.players[0].scores[h];
+                const holeData = course.holesData.find((hd: HoleData) => hd.number === h);
+                if (!score || !holeData) return sum;
+                return sum + calculateStablefordPoints(score.strokes, holeData.par, player1EffectiveHcp, holeData.handicap);
+              }, 0);
+              const player2Stableford = holes.reduce((sum, h) => {
+                const score = round.players[1].scores[h];
+                const holeData = course.holesData.find((hd: HoleData) => hd.number === h);
+                if (!score || !holeData) return sum;
+                return sum + calculateStablefordPoints(score.strokes, holeData.par, player2EffectiveHcp, holeData.handicap);
+              }, 0);
+
+              return (
+                <div className="flex items-center justify-between">
+                  <div className="text-center flex-1">
+                    <div className="font-semibold">{round.players[0].name}</div>
+                    <div className="text-3xl font-bold text-primary">
+                      {round.isFinished
+                        ? formatMatchPlayFinalResult(matchScore, holesRemaining, 0)
+                        : formatMatchPlayScore(matchScore, 0)
+                      }
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {player1Stableford} pts Stableford
+                    </div>
+                  </div>
+                  <div className="text-center px-4">
+                    <div className="text-sm text-muted-foreground">vs</div>
+                    {!round.isFinished && (
+                      <div className="text-xs font-medium">
+                        {holesRemaining} hoyos restantes
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-center flex-1">
+                    <div className="font-semibold">{round.players[1].name}</div>
+                    <div className="text-3xl font-bold text-primary">
+                      {round.isFinished
+                        ? formatMatchPlayFinalResult(matchScore, holesRemaining, 1)
+                        : formatMatchPlayScore(matchScore, 1)
+                      }
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {player2Stableford} pts Stableford
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Scorecard for each player */}
       {round.players.map((player: Player) => {
         const front9Totals = getHolesTotals(player, front9);
@@ -190,20 +300,34 @@ export function RoundCard() {
                 <div>
                   <CardTitle className="text-lg">{player.name}</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    HDJ: {player.playingHandicap} | Tee: {player.teeBox}
+                    HDJ: {getEffectiveHandicap(player)}{!round.useHandicap && " (común)"} | Tee: {player.teeBox}
                   </p>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-primary">
-                    {totalTotals.points} pts
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {totalTotals.strokes} golpes ({totalTotals.strokes - totalPar >= 0 ? "+" : ""}{totalTotals.strokes - totalPar})
-                  </p>
-                  {round.gameMode === "sindicato" && (
-                    <p className="text-xs text-muted-foreground">
-                      Stableford: {totalTotals.stablefordPoints} pts
-                    </p>
+                  {round.gameMode === "matchplay" ? (
+                    <>
+                      <div className="text-2xl font-bold text-primary">
+                        {totalTotals.stablefordPoints} pts
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {totalTotals.strokes} golpes ({totalTotals.strokes - totalPar >= 0 ? "+" : ""}{totalTotals.strokes - totalPar})
+                      </p>
+                      <p className="text-xs text-muted-foreground">Stableford</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-2xl font-bold text-primary">
+                        {totalTotals.points} pts
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {totalTotals.strokes} golpes ({totalTotals.strokes - totalPar >= 0 ? "+" : ""}{totalTotals.strokes - totalPar})
+                      </p>
+                      {round.gameMode === "sindicato" && (
+                        <p className="text-xs text-muted-foreground">
+                          Stableford: {totalTotals.stablefordPoints} pts
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -294,7 +418,7 @@ export function RoundCard() {
                           </td>
                         </tr>
                         {/* Points row */}
-                        {round.useHandicap && round.gameMode === "stableford" && (
+                        {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
                           <tr className="border-b bg-primary/5">
                             <td className="p-1 font-medium text-primary">Puntos</td>
                             {front9.map(h => {
@@ -412,7 +536,7 @@ export function RoundCard() {
                           </td>
                         </tr>
                         {/* Points row */}
-                        {round.useHandicap && round.gameMode === "stableford" && (
+                        {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
                           <tr className="border-b bg-primary/5">
                             <td className="p-1 font-medium text-primary">Puntos</td>
                             {back9.map(h => {
@@ -466,7 +590,7 @@ export function RoundCard() {
                   <div className="text-lg font-bold">{totalTotals.putts}</div>
                   <div className="text-xs text-muted-foreground">Putts</div>
                 </div>
-                {round.useHandicap && round.gameMode === "stableford" && (
+                {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
                   <div className="p-2 bg-primary/10 rounded">
                     <div className="text-lg font-bold text-primary">{totalTotals.points}</div>
                     <div className="text-xs text-muted-foreground">Puntos</div>

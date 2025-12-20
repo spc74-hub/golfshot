@@ -345,3 +345,134 @@ export function calculateInStrokes(player: Player): number {
     return total + (score?.strokes || 0);
   }, 0);
 }
+
+/**
+ * Match Play result for a single hole
+ * Returns: 1 = player1 wins, -1 = player2 wins, 0 = halved (tie)
+ */
+export function calculateMatchPlayHoleResult(
+  player1: Player,
+  player2: Player,
+  holeNumber: number,
+  holesData: HoleData[]
+): number {
+  const holeData = holesData.find((h) => h.number === holeNumber);
+  if (!holeData) return 0;
+
+  const score1 = player1.scores[holeNumber];
+  const score2 = player2.scores[holeNumber];
+
+  if (!score1 || !score2) return 0;
+
+  const net1 = calculateNetScore(
+    score1.strokes,
+    player1.playingHandicap,
+    holeData.handicap
+  );
+  const net2 = calculateNetScore(
+    score2.strokes,
+    player2.playingHandicap,
+    holeData.handicap
+  );
+
+  if (net1 < net2) return 1; // Player 1 wins
+  if (net2 < net1) return -1; // Player 2 wins
+  return 0; // Halved
+}
+
+/**
+ * Calculate Match Play cumulative score through completed holes
+ * Returns: positive = player1 leads, negative = player2 leads, 0 = all square
+ */
+export function calculateMatchPlayScore(
+  player1: Player,
+  player2: Player,
+  completedHoles: number[],
+  holesData: HoleData[]
+): number {
+  return completedHoles.reduce((score, holeNum) => {
+    return score + calculateMatchPlayHoleResult(player1, player2, holeNum, holesData);
+  }, 0);
+}
+
+/**
+ * Format Match Play score for display
+ * e.g., "2 UP", "1 DN", "AS" (All Square)
+ */
+export function formatMatchPlayScore(
+  score: number,
+  playerIndex: 0 | 1 = 0
+): string {
+  // If playerIndex is 1, invert the score (from player 2's perspective)
+  const adjustedScore = playerIndex === 0 ? score : -score;
+
+  if (adjustedScore === 0) return "AS"; // All Square
+  if (adjustedScore > 0) return `${adjustedScore} UP`;
+  return `${Math.abs(adjustedScore)} DN`;
+}
+
+/**
+ * Get Match Play holes remaining
+ */
+export function getMatchPlayHolesRemaining(
+  courseLength: "18" | "front9" | "back9",
+  completedHoles: number[]
+): number {
+  const totalHoles = courseLength === "18" ? 18 : 9;
+  return totalHoles - completedHoles.length;
+}
+
+/**
+ * Check if Match Play is decided (dormie or won)
+ * Returns: { decided: boolean, winner: 0 | 1 | null }
+ */
+export function isMatchPlayDecided(
+  score: number,
+  holesRemaining: number
+): { decided: boolean; winner: 0 | 1 | null } {
+  const absScore = Math.abs(score);
+
+  if (absScore > holesRemaining) {
+    // Match is won - lead is greater than holes remaining
+    return {
+      decided: true,
+      winner: score > 0 ? 0 : 1,
+    };
+  }
+
+  return { decided: false, winner: null };
+}
+
+/**
+ * Format final Match Play result
+ * e.g., "3&2", "2&1", "1 UP", "AS" (for tie)
+ */
+export function formatMatchPlayFinalResult(
+  score: number,
+  holesRemaining: number,
+  playerIndex: 0 | 1 = 0
+): string {
+  const adjustedScore = playerIndex === 0 ? score : -score;
+  const absScore = Math.abs(adjustedScore);
+
+  if (adjustedScore === 0) return "AS"; // All Square (tie)
+
+  if (holesRemaining === 0) {
+    // Finished on last hole
+    return adjustedScore > 0 ? "1 UP" : "1 DN";
+  }
+
+  if (absScore > holesRemaining) {
+    // Won before finishing
+    const margin = absScore;
+    const holesLeft = holesRemaining;
+    if (adjustedScore > 0) {
+      return `${margin}&${holesLeft}`;
+    } else {
+      return `${margin}&${holesLeft} DN`;
+    }
+  }
+
+  // Match still in progress or just finished
+  return adjustedScore > 0 ? `${absScore} UP` : `${absScore} DN`;
+}

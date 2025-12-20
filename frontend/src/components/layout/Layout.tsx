@@ -8,8 +8,7 @@ import {
   Settings,
   LogOut,
   Flag,
-  MapPin,
-  Users,
+  BarChart3,
 } from "lucide-react";
 
 interface LayoutProps {
@@ -89,22 +88,13 @@ export function Layout({ children }: LayoutProps) {
               <span className="text-xs mt-1">Historial</span>
             </Link>
             <Link
-              to="/courses"
+              to="/stats"
               className={`flex flex-col items-center justify-center w-full h-full ${
-                isActive("/courses") ? "text-primary" : "text-muted-foreground"
+                isActive("/stats") ? "text-primary" : "text-muted-foreground"
               }`}
             >
-              <MapPin className="h-5 w-5" />
-              <span className="text-xs mt-1">Campos</span>
-            </Link>
-            <Link
-              to="/players"
-              className={`flex flex-col items-center justify-center w-full h-full ${
-                isActive("/players") ? "text-primary" : "text-muted-foreground"
-              }`}
-            >
-              <Users className="h-5 w-5" />
-              <span className="text-xs mt-1">Jugadores</span>
+              <BarChart3 className="h-5 w-5" />
+              <span className="text-xs mt-1">Stats</span>
             </Link>
             {isAdmin && (
               <Link

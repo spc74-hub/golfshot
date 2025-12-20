@@ -76,6 +76,11 @@ const GAME_MODES: { value: GameMode; label: string; description: string }[] = [
     label: "Equipos",
     description: "Best Ball o Good/Bad Ball",
   },
+  {
+    value: "matchplay",
+    label: "Match Play",
+    description: "1 vs 1, punto por hoyo ganado",
+  },
 ];
 
 const COURSE_LENGTHS: { value: CourseLength; label: string }[] = [
@@ -428,7 +433,8 @@ export function RoundSetup() {
     selectedCourseId &&
     players.length > 0 &&
     players.every((p) => p.name.trim() !== "") &&
-    (gameMode !== "team" || players.length >= 2);
+    (gameMode !== "team" || players.length >= 2) &&
+    (gameMode !== "matchplay" || players.length === 2);
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -536,6 +542,46 @@ export function RoundSetup() {
                   </p>
                 </div>
               )}
+            </div>
+
+            {/* Explicit action buttons */}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isExtracting}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Subir archivo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={async () => {
+                  try {
+                    const items = await navigator.clipboard.read();
+                    for (const item of items) {
+                      const imageType = item.types.find(type => type.startsWith("image/"));
+                      if (imageType) {
+                        const blob = await item.getType(imageType);
+                        const file = new File([blob], "clipboard-image.png", { type: imageType });
+                        await handleImageFile(file);
+                        break;
+                      }
+                    }
+                  } catch (error) {
+                    console.error("Error reading clipboard:", error);
+                    setExtractError("No se pudo leer la imagen del portapapeles. Prueba con Ctrl+V.");
+                  }
+                }}
+                disabled={isExtracting}
+              >
+                <ClipboardPaste className="h-4 w-4 mr-2" />
+                Pegar imagen
+              </Button>
             </div>
 
             {extractError && (

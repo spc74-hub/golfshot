@@ -112,7 +112,7 @@ class RoundCreate(BaseModel):
     course_name: str
     round_date: str
     course_length: Literal["18", "front9", "back9"]
-    game_mode: Literal["stableford", "stroke", "sindicato", "team"]
+    game_mode: Literal["stableford", "stroke", "sindicato", "team", "matchplay"]
     use_handicap: bool = True
     handicap_percentage: Literal[100, 75] = 100
     sindicato_points: Optional[list[int]] = None
@@ -139,7 +139,7 @@ class RoundResponse(BaseModel):
     course_name: Optional[str] = None
     round_date: str
     course_length: Literal["18", "front9", "back9"]
-    game_mode: Literal["stableford", "stroke", "sindicato", "team"]
+    game_mode: Literal["stableford", "stroke", "sindicato", "team", "matchplay"]
     use_handicap: bool
     handicap_percentage: int
     sindicato_points: Optional[list[int]] = None
@@ -182,3 +182,19 @@ class SavedPlayerResponse(BaseModel):
     preferred_tee: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+
+# User Statistics schemas
+class UserStats(BaseModel):
+    total_rounds: int
+    avg_strokes_par3: Optional[float] = None
+    avg_strokes_par4: Optional[float] = None
+    avg_strokes_par5: Optional[float] = None
+    avg_putts_per_round: Optional[float] = None
+    avg_strokes_9holes: Optional[float] = None
+    avg_strokes_18holes: Optional[float] = None
+    avg_stableford_points: Optional[float] = None
+    virtual_handicap: Optional[float] = None
+    best_round_score: Optional[int] = None
+    best_round_date: Optional[str] = None
+    best_round_course: Optional[str] = None

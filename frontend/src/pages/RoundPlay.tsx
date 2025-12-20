@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useRound, useUpdateRound, useFinishRound, useDeleteRound } from "@/hooks/useRounds";
 import { useCourse } from "@/hooks/useCourses";
@@ -7,6 +7,9 @@ import {
   calculateSindicatoPoints,
   getScoreResultVsPar,
   getHolesForCourseLength,
+  calculateMatchPlayScore,
+  formatMatchPlayScore,
+  getMatchPlayHolesRemaining,
 } from "@/lib/calculations";
 import {
   Card,
@@ -76,20 +79,20 @@ export function RoundPlay() {
   }, [round, currentHole, currentHoleData?.par]);
 
   // Update strokes for a player
-  const updateStrokes = (playerId: string, strokes: number) => {
+  const updateStrokes = useCallback((playerId: string, strokes: number) => {
     setPlayerScores((prev) => ({
       ...prev,
       [playerId]: { ...prev[playerId], strokes: Math.max(1, strokes) },
     }));
-  };
+  }, []);
 
   // Update putts for a player
-  const updatePutts = (playerId: string, putts: number) => {
+  const updatePutts = useCallback((playerId: string, putts: number) => {
     setPlayerScores((prev) => ({
       ...prev,
       [playerId]: { ...prev[playerId], putts: Math.max(0, putts) },
     }));
-  };
+  }, []);
 
   // Save current hole and go to next
   const saveAndNext = async () => {
@@ -211,18 +214,34 @@ export function RoundPlay() {
     }
   };
 
+  // Get the effective handicap for a player (when useHandicap is false, all use first player's handicap)
+  const getEffectiveHandicap = useCallback((player: Player): number => {
+    if (!round) return player.playingHandicap;
+    // When useHandicap is false, everyone uses the first player's handicap
+    if (!round.useHandicap) {
+      return round.players[0]?.playingHandicap || 0;
+    }
+    return player.playingHandicap;
+  }, [round]);
+
   // Calculate total points for a player (only completed holes)
-  const getTotalPoints = (player: Player): number => {
-    if (!course || !round?.useHandicap) return 0;
+  const getTotalPoints = useCallback((player: Player): number => {
+    if (!course) return 0;
 
     let total = 0;
-    const completedHoles = round.completedHoles || [];
+    const completedHoles = round?.completedHoles || [];
+    const effectiveHandicap = getEffectiveHandicap(player);
 
-    if (round.gameMode === "sindicato") {
-      // For Sindicato mode, calculate points based on position in each hole
+    if (round?.gameMode === "sindicato") {
+      // For Sindicato mode, we need to pass modified players with effective handicaps
       completedHoles.forEach((holeNum) => {
+        // Create players with effective handicaps for ranking calculation
+        const playersWithEffectiveHcp = round.players.map((p: Player) => ({
+          ...p,
+          playingHandicap: getEffectiveHandicap(p),
+        }));
         const sindicatoPoints = calculateSindicatoPoints(
-          round.players,
+          playersWithEffectiveHcp,
           holeNum,
           course.holesData,
           round.sindicatoPoints || [4, 2, 1, 0]
@@ -238,21 +257,22 @@ export function RoundPlay() {
           total += calculateStablefordPoints(
             score.strokes,
             holeData.par,
-            player.playingHandicap,
+            effectiveHandicap,
             holeData.handicap
           );
         }
       });
     }
     return total;
-  };
+  }, [course, round, getEffectiveHandicap]);
 
   // Calculate Stableford points for a player (always, for personal info)
-  const getStablefordPoints = (player: Player): number => {
-    if (!course || !round?.useHandicap) return 0;
+  const getStablefordPoints = useCallback((player: Player): number => {
+    if (!course) return 0;
 
     let total = 0;
-    const completedHoles = round.completedHoles || [];
+    const completedHoles = round?.completedHoles || [];
+    const effectiveHandicap = getEffectiveHandicap(player);
 
     completedHoles.forEach((holeNum) => {
       const score = player.scores[holeNum];
@@ -261,38 +281,56 @@ export function RoundPlay() {
         total += calculateStablefordPoints(
           score.strokes,
           holeData.par,
-          player.playingHandicap,
+          effectiveHandicap,
           holeData.handicap
         );
       }
     });
     return total;
-  };
+  }, [course, round, getEffectiveHandicap]);
 
-  // Get Stableford points for current hole
-  const getHolePoints = (player: Player): number => {
-    if (!currentHoleData || !round?.useHandicap) return 0;
-    const score = playerScores[player.id];
-    if (!score) return 0;
+  // Get Stableford points for current hole - memoized per player
+  const holePointsMap = useMemo(() => {
+    if (!currentHoleData) return new Map<string, number>();
 
-    return calculateStablefordPoints(
-      score.strokes,
-      currentHoleData.par,
-      player.playingHandicap,
-      currentHoleData.handicap
-    );
-  };
+    const map = new Map<string, number>();
+    round?.players.forEach((player: Player) => {
+      const score = playerScores[player.id];
+      if (score) {
+        const effectiveHcp = getEffectiveHandicap(player);
+        map.set(player.id, calculateStablefordPoints(
+          score.strokes,
+          currentHoleData.par,
+          effectiveHcp,
+          currentHoleData.handicap
+        ));
+      }
+    });
+    return map;
+  }, [currentHoleData, round, playerScores, getEffectiveHandicap]);
 
-  // Get score color class (based on gross strokes vs par, not handicap)
-  const getScoreColor = (player: Player): string => {
-    if (!currentHoleData) return "";
-    const score = playerScores[player.id];
-    if (!score) return "";
+  const getHolePoints = useCallback((player: Player): number => {
+    return holePointsMap.get(player.id) || 0;
+  }, [holePointsMap]);
 
-    // Use gross score vs par for colors (like standard golf apps)
-    const result = getScoreResultVsPar(score.strokes, currentHoleData.par);
-    return SCORE_COLORS[result] || "";
-  };
+  // Get score color class - memoized per player
+  const scoreColorMap = useMemo(() => {
+    if (!currentHoleData) return new Map<string, string>();
+
+    const map = new Map<string, string>();
+    round?.players.forEach((player: Player) => {
+      const score = playerScores[player.id];
+      if (score) {
+        const result = getScoreResultVsPar(score.strokes, currentHoleData.par);
+        map.set(player.id, SCORE_COLORS[result] || "");
+      }
+    });
+    return map;
+  }, [currentHoleData, round?.players, playerScores]);
+
+  const getScoreColor = useCallback((player: Player): string => {
+    return scoreColorMap.get(player.id) || "";
+  }, [scoreColorMap]);
 
   // Navigate to a specific hole (save current first)
   const goToHole = async (targetHole: number) => {
@@ -404,7 +442,7 @@ export function RoundPlay() {
   const isLastHole = holes.indexOf(currentHole) === holes.length - 1;
 
   return (
-    <div className="space-y-4 max-w-lg mx-auto pb-24">
+    <div className="space-y-4 max-w-lg mx-auto pb-44 md:pb-24">
       {/* Header */}
       <div className="flex items-center justify-between">
         <Button
@@ -423,6 +461,7 @@ export function RoundPlay() {
             {round.gameMode === "stroke" && "Stroke Play"}
             {round.gameMode === "sindicato" && "Sindicato"}
             {round.gameMode === "team" && "Equipos"}
+            {round.gameMode === "matchplay" && "Match Play"}
           </p>
         </div>
         <Link to={`/round/card?id=${roundId}`}>
@@ -485,6 +524,57 @@ export function RoundPlay() {
         </CardHeader>
       </Card>
 
+      {/* Match Play Scoreboard */}
+      {round.gameMode === "matchplay" && round.players.length === 2 && course && (() => {
+        // Use effective handicaps for Match Play scoring
+        const player1WithEffectiveHcp = {
+          ...round.players[0],
+          playingHandicap: getEffectiveHandicap(round.players[0]),
+        };
+        const player2WithEffectiveHcp = {
+          ...round.players[1],
+          playingHandicap: getEffectiveHandicap(round.players[1]),
+        };
+        const matchScore = calculateMatchPlayScore(
+          player1WithEffectiveHcp,
+          player2WithEffectiveHcp,
+          round.completedHoles || [],
+          course.holesData
+        );
+        return (
+          <Card className="bg-primary/5 border-primary/20">
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div className="text-center flex-1">
+                  <div className="font-semibold">{round.players[0].name}</div>
+                  <div className="text-2xl font-bold text-primary">
+                    {formatMatchPlayScore(matchScore, 0)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {getStablefordPoints(round.players[0])} pts Stableford
+                  </div>
+                </div>
+                <div className="text-center px-4">
+                  <div className="text-xs text-muted-foreground">vs</div>
+                  <div className="text-sm font-medium">
+                    {getMatchPlayHolesRemaining(round.courseLength, round.completedHoles || [])} hoyos
+                  </div>
+                </div>
+                <div className="text-center flex-1">
+                  <div className="font-semibold">{round.players[1].name}</div>
+                  <div className="text-2xl font-bold text-primary">
+                    {formatMatchPlayScore(matchScore, 1)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {getStablefordPoints(round.players[1])} pts Stableford
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       {/* Player Scores */}
       {round.players.map((player: Player) => (
         <Card key={player.id}>
@@ -493,17 +583,30 @@ export function RoundPlay() {
               <div>
                 <div className="font-semibold">{player.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  HDJ: {player.playingHandicap}
+                  HDJ: {getEffectiveHandicap(player)}{!round.useHandicap && " (común)"}
                 </div>
               </div>
               <div className="text-right">
-                <Badge variant="outline" className="text-lg">
-                  {getTotalPoints(player)} pts
-                </Badge>
-                {round.gameMode === "sindicato" && (
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Stableford: {getStablefordPoints(player)}
-                  </div>
+                {round.gameMode === "matchplay" ? (
+                  <>
+                    <Badge variant="outline" className="text-lg">
+                      {getStablefordPoints(player)} pts
+                    </Badge>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Stableford
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Badge variant="outline" className="text-lg">
+                      {getTotalPoints(player)} pts
+                    </Badge>
+                    {round.gameMode === "sindicato" && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Stableford: {getStablefordPoints(player)}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -582,7 +685,7 @@ export function RoundPlay() {
               </div>
 
               {/* Points */}
-              {round.useHandicap && round.gameMode === "stableford" && (
+              {round.gameMode === "stableford" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Puntos</Label>
                   <div className="h-10 flex items-center justify-center">
@@ -598,7 +701,7 @@ export function RoundPlay() {
       ))}
 
       {/* Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t p-4">
+      <div className="fixed bottom-16 md:bottom-0 left-0 right-0 bg-background border-t p-4 z-40">
         <div className="max-w-lg mx-auto flex gap-2">
           <Button
             variant="outline"

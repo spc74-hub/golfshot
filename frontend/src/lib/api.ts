@@ -6,6 +6,7 @@ import type {
   UpdateRoundInput,
   User,
   AdminStats,
+  UserStats,
   ImportedRoundData,
   SavedPlayer,
   CreateSavedPlayerInput,
@@ -169,6 +170,25 @@ export const usersApi = {
 
   delete: async (id: string): Promise<void> => {
     return fetchWithAuth(`/users/${id}`, { method: "DELETE" });
+  },
+
+  getMyStats: async (): Promise<UserStats> => {
+    const data = await fetchWithAuth("/users/me/stats");
+    // Transform snake_case to camelCase
+    return {
+      totalRounds: data.total_rounds,
+      avgStrokesPar3: data.avg_strokes_par3,
+      avgStrokesPar4: data.avg_strokes_par4,
+      avgStrokesPar5: data.avg_strokes_par5,
+      avgPuttsPerRound: data.avg_putts_per_round,
+      avgStrokes9holes: data.avg_strokes_9holes,
+      avgStrokes18holes: data.avg_strokes_18holes,
+      avgStablefordPoints: data.avg_stableford_points,
+      virtualHandicap: data.virtual_handicap,
+      bestRoundScore: data.best_round_score,
+      bestRoundDate: data.best_round_date,
+      bestRoundCourse: data.best_round_course,
+    };
   },
 };
 

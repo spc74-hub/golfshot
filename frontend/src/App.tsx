@@ -15,6 +15,7 @@ import { RoundPlay } from "@/pages/RoundPlay";
 import { RoundCard } from "@/pages/RoundCard";
 import { ImportRound } from "@/pages/ImportRound";
 import { Players } from "@/pages/Players";
+import { Stats } from "@/pages/Stats";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -113,6 +114,16 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Players />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/stats"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Stats />
                   </Layout>
                 </ProtectedRoute>
               }

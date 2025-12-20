@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from app.models.schemas import UserResponse, UserUpdate
+from app.models.schemas import UserResponse, UserUpdate, UserStats
 from app.services.supabase import get_supabase_client, get_supabase_admin_client
 from app.dependencies import get_current_user, get_admin_user
+from typing import Dict, Any
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -166,6 +167,218 @@ async def delete_user(
         supabase.auth.admin.delete_user(user_id)
 
         return {"message": "User deleted successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.get("/me/stats", response_model=UserStats)
+async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
+    """Get statistics for the current user."""
+    supabase = get_supabase_client()
+
+    try:
+        # Get all finished rounds for the user
+        rounds_response = (
+            supabase.table("rounds")
+            .select("*")
+            .eq("user_id", current_user.id)
+            .eq("is_finished", True)
+            .order("round_date", desc=True)
+            .execute()
+        )
+
+        rounds = rounds_response.data or []
+        total_rounds = len(rounds)
+
+        if total_rounds == 0:
+            return UserStats(
+                total_rounds=0,
+                avg_strokes_par3=None,
+                avg_strokes_par4=None,
+                avg_strokes_par5=None,
+                avg_putts_per_round=None,
+                avg_strokes_9holes=None,
+                avg_strokes_18holes=None,
+                avg_stableford_points=None,
+                virtual_handicap=None,
+                best_round_score=None,
+                best_round_date=None,
+                best_round_course=None,
+            )
+
+        # Get all courses for hole data
+        courses_response = supabase.table("courses").select("*").execute()
+        courses = {c["id"]: c for c in (courses_response.data or [])}
+
+        # Calculate statistics
+        par3_strokes = []
+        par4_strokes = []
+        par5_strokes = []
+        total_putts = []
+        strokes_9holes = []
+        strokes_18holes = []
+        stableford_points = []
+        score_differentials = []  # For handicap calculation
+        best_score = None
+        best_score_info = None
+
+        for round_data in rounds:
+            course = courses.get(round_data.get("course_id"))
+            if not course:
+                continue
+
+            holes_data = {h["number"]: h for h in course.get("holes_data", [])}
+            players = round_data.get("players", [])
+
+            # Find the user's player (first player is usually the user)
+            user_player = players[0] if players else None
+            if not user_player:
+                continue
+
+            scores = user_player.get("scores", {})
+            tee_box = user_player.get("tee_box", "")
+
+            # Get tee info for course rating and slope
+            tees = course.get("tees", [])
+            tee_info = next((t for t in tees if t["name"] == tee_box), None)
+            course_rating = tee_info["rating"] if tee_info else 72.0
+            slope = tee_info["slope"] if tee_info else 113
+
+            # Determine which holes to count based on course_length
+            course_length = round_data.get("course_length", "18")
+            if course_length == "front9":
+                holes_to_count = range(1, 10)
+            elif course_length == "back9":
+                holes_to_count = range(10, 19)
+            else:  # "18"
+                holes_to_count = range(1, 19)
+
+            round_strokes = 0
+            round_putts = 0
+            round_stableford = 0
+
+            for hole_num in holes_to_count:
+                hole_num_str = str(hole_num)
+                if hole_num_str not in scores:
+                    continue
+
+                score = scores[hole_num_str]
+                strokes = score.get("strokes", 0)
+                putts = score.get("putts", 0)
+
+                hole_data = holes_data.get(hole_num)
+                if not hole_data:
+                    continue
+
+                par = hole_data.get("par")
+                handicap = hole_data.get("handicap", 1)
+
+                # Track strokes by par
+                if par == 3:
+                    par3_strokes.append(strokes)
+                elif par == 4:
+                    par4_strokes.append(strokes)
+                elif par == 5:
+                    par5_strokes.append(strokes)
+
+                round_strokes += strokes
+                round_putts += putts
+
+                # Calculate stableford points
+                playing_hcp = user_player.get("playing_handicap", 0)
+                strokes_received = 0
+                if playing_hcp > 0:
+                    base_strokes = playing_hcp // 18
+                    remainder = playing_hcp % 18
+                    strokes_received = base_strokes + (1 if handicap <= remainder else 0)
+
+                net_score = strokes - strokes_received
+                diff = net_score - par
+
+                if diff <= -3:
+                    points = 5
+                elif diff == -2:
+                    points = 4
+                elif diff == -1:
+                    points = 3
+                elif diff == 0:
+                    points = 2
+                elif diff == 1:
+                    points = 1
+                else:
+                    points = 0
+
+                round_stableford += points
+
+            # Track round totals
+            if course_length in ["front9", "back9"]:
+                strokes_9holes.append(round_strokes)
+            else:
+                strokes_18holes.append(round_strokes)
+
+            if round_putts > 0:
+                total_putts.append(round_putts)
+
+            if round_data.get("game_mode") == "stableford":
+                stableford_points.append(round_stableford)
+
+            # Calculate score differential for handicap (only for 18-hole rounds)
+            if course_length == "18" and round_strokes > 0:
+                # Differential = (Score - Course Rating) * 113 / Slope
+                differential = (round_strokes - course_rating) * 113 / slope
+                score_differentials.append(differential)
+
+                # Track best score
+                if best_score is None or round_strokes < best_score:
+                    best_score = round_strokes
+                    best_score_info = {
+                        "score": round_strokes,
+                        "date": round_data.get("round_date"),
+                        "course": round_data.get("course_name"),
+                    }
+
+        # Calculate averages
+        avg_par3 = sum(par3_strokes) / len(par3_strokes) if par3_strokes else None
+        avg_par4 = sum(par4_strokes) / len(par4_strokes) if par4_strokes else None
+        avg_par5 = sum(par5_strokes) / len(par5_strokes) if par5_strokes else None
+        avg_putts = sum(total_putts) / len(total_putts) if total_putts else None
+        avg_9holes = sum(strokes_9holes) / len(strokes_9holes) if strokes_9holes else None
+        avg_18holes = sum(strokes_18holes) / len(strokes_18holes) if strokes_18holes else None
+        avg_stableford = sum(stableford_points) / len(stableford_points) if stableford_points else None
+
+        # Calculate virtual handicap (best 8 of last 20 differentials)
+        virtual_hcp = None
+        if score_differentials:
+            # Take last 20 rounds
+            recent_diffs = score_differentials[:20]
+            # Sort and take best 8
+            if len(recent_diffs) >= 8:
+                best_8 = sorted(recent_diffs)[:8]
+                virtual_hcp = sum(best_8) / 8
+            elif len(recent_diffs) >= 3:
+                # If less than 8 but at least 3, use best 3
+                best_n = sorted(recent_diffs)[:min(3, len(recent_diffs))]
+                virtual_hcp = sum(best_n) / len(best_n)
+
+        return UserStats(
+            total_rounds=total_rounds,
+            avg_strokes_par3=round(avg_par3, 2) if avg_par3 else None,
+            avg_strokes_par4=round(avg_par4, 2) if avg_par4 else None,
+            avg_strokes_par5=round(avg_par5, 2) if avg_par5 else None,
+            avg_putts_per_round=round(avg_putts, 2) if avg_putts else None,
+            avg_strokes_9holes=round(avg_9holes, 2) if avg_9holes else None,
+            avg_strokes_18holes=round(avg_18holes, 2) if avg_18holes else None,
+            avg_stableford_points=round(avg_stableford, 2) if avg_stableford else None,
+            virtual_handicap=round(virtual_hcp, 1) if virtual_hcp else None,
+            best_round_score=best_score_info["score"] if best_score_info else None,
+            best_round_date=best_score_info["date"] if best_score_info else None,
+            best_round_course=best_score_info["course"] if best_score_info else None,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
