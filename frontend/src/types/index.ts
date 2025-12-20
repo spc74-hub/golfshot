@@ -31,6 +31,7 @@ export interface Course {
   par: number;
   tees: Tee[];
   holesData: HoleData[];
+  isFavorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,6 +119,7 @@ export interface CreateCourseInput {
   par: number;
   tees: Tee[];
   holesData: HoleData[];
+  is_favorite?: boolean;
 }
 
 // Auth types

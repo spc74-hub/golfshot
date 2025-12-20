@@ -60,6 +60,7 @@ class CourseCreate(BaseModel):
     par: int = Field(ge=27, le=80)
     tees: list[Tee]
     holes_data: list[HoleData]
+    is_favorite: bool = False
 
 
 class CourseUpdate(BaseModel):
@@ -68,6 +69,7 @@ class CourseUpdate(BaseModel):
     par: Optional[int] = Field(default=None, ge=27, le=80)
     tees: Optional[list[Tee]] = None
     holes_data: Optional[list[HoleData]] = None
+    is_favorite: Optional[bool] = None
 
 
 class CourseResponse(BaseModel):
@@ -77,6 +79,7 @@ class CourseResponse(BaseModel):
     par: int
     tees: list[Tee]
     holes_data: list[HoleData]
+    is_favorite: bool = False
     created_at: datetime
     updated_at: datetime
 

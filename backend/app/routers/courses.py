@@ -207,9 +207,9 @@ async def create_course(
 async def update_course(
     course_id: str,
     course: CourseUpdate,
-    admin_user: UserResponse = Depends(get_admin_user),
+    current_user: UserResponse = Depends(get_current_user),
 ):
-    """Update a course (admin only)."""
+    """Update a course."""
     supabase = get_supabase_client()
 
     try:
@@ -232,6 +232,24 @@ async def update_course(
         return response.data[0]
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.get("/{course_id}/rounds-count")
+async def get_course_rounds_count(
+    course_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Get the count of rounds associated with a course."""
+    supabase = get_supabase_client()
+
+    try:
+        response = supabase.table("rounds").select("id", count="exact").eq("course_id", course_id).execute()
+        return {"count": response.count or 0}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

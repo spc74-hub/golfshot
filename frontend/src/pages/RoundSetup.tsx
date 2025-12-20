@@ -472,11 +472,19 @@ export function RoundSetup() {
                 />
               </SelectTrigger>
               <SelectContent>
-                {courses?.map((course: Course) => (
-                  <SelectItem key={course.id} value={course.id}>
-                    {course.name} ({course.holes} hoyos, Par {course.par})
-                  </SelectItem>
-                ))}
+                {courses
+                  ?.slice()
+                  .sort((a: Course, b: Course) => {
+                    // Favorites first
+                    if (a.isFavorite && !b.isFavorite) return -1;
+                    if (!a.isFavorite && b.isFavorite) return 1;
+                    return a.name.localeCompare(b.name);
+                  })
+                  .map((course: Course) => (
+                    <SelectItem key={course.id} value={course.id}>
+                      {course.isFavorite ? "★ " : ""}{course.name} ({course.holes}h, Par {course.par})
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>

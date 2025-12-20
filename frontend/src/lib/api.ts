@@ -39,6 +39,7 @@ function transformCourse(backendCourse: Record<string, unknown>): Course {
     par: backendCourse.par as number,
     tees: backendCourse.tees as Course["tees"],
     holesData: (backendCourse.holes_data || backendCourse.holesData) as Course["holesData"],
+    isFavorite: (backendCourse.is_favorite ?? backendCourse.isFavorite ?? false) as boolean,
     createdAt: backendCourse.created_at as string,
     updatedAt: backendCourse.updated_at as string,
   };
@@ -224,6 +225,11 @@ export const coursesApi = {
 
   delete: async (id: string): Promise<void> => {
     return fetchWithAuth(`/courses/${id}`, { method: "DELETE" });
+  },
+
+  getRoundsCount: async (id: string): Promise<number> => {
+    const result = await fetchWithAuth(`/courses/${id}/rounds-count`);
+    return (result as { count: number }).count;
   },
 
   migrate: async (): Promise<{ migrated: string[]; skipped: string[] }> => {
