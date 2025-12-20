@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from app.models.schemas import UserResponse, UserUpdate, UserStats
+from app.models.schemas import UserResponse, UserUpdate, UserStats, UserWithStats, UserPermissionsUpdate
 from app.services.supabase import get_supabase_client, get_supabase_admin_client
-from app.dependencies import get_current_user, get_admin_user
+from app.dependencies import get_current_user, get_admin_user, get_owner_user
 from typing import Dict, Any
 from datetime import datetime, date
 
@@ -25,12 +25,17 @@ async def list_users(admin_user: UserResponse = Depends(get_admin_user)):
         result = []
         for user in users:
             profile = profiles.get(user.id, {})
+            permissions = profile.get("permissions", [])
+            if permissions is None:
+                permissions = []
             result.append(UserResponse(
                 id=user.id,
                 email=user.email,
                 display_name=profile.get("display_name"),
                 role=profile.get("role", "user"),
                 status=profile.get("status", "active"),
+                permissions=permissions,
+                linked_player_id=profile.get("linked_player_id"),
                 created_at=user.created_at,
                 updated_at=profile.get("updated_at", user.created_at),
             ))
@@ -49,8 +54,8 @@ async def get_user(
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Get user by ID."""
-    # Users can only view their own profile unless admin
-    if current_user.id != user_id and current_user.role != "admin":
+    # Users can only view their own profile unless admin/owner
+    if current_user.id != user_id and current_user.role not in ("admin", "owner"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
@@ -69,6 +74,9 @@ async def get_user(
             )
 
         profile = profile_response.data
+        permissions = profile.get("permissions", [])
+        if permissions is None:
+            permissions = []
 
         return UserResponse(
             id=profile["id"],
@@ -76,6 +84,8 @@ async def get_user(
             display_name=profile.get("display_name"),
             role=profile.get("role", "user"),
             status=profile.get("status", "active"),
+            permissions=permissions,
+            linked_player_id=profile.get("linked_player_id"),
             created_at=profile.get("created_at"),
             updated_at=profile.get("updated_at"),
         )
@@ -95,19 +105,41 @@ async def update_user(
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Update user profile."""
-    # Users can update their own profile (name only)
-    # Admins can update any user (including role and status)
-    if current_user.id != user_id and current_user.role != "admin":
+    # Users can update their own profile (display_name, linked_player_id only)
+    # Admins can update any user (including status)
+    # Only owner can change roles and permissions
+    if current_user.id != user_id and current_user.role not in ("admin", "owner"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
 
-    # Non-admins cannot change role or status
-    if current_user.role != "admin" and (update.role or update.status):
+    # Only owner can change role
+    if update.role is not None and current_user.role != "owner":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can change role or status",
+            detail="Only owner can change roles",
+        )
+
+    # Only owner can change permissions
+    if update.permissions is not None and current_user.role != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only owner can change permissions",
+        )
+
+    # Non-admin/owner cannot change status
+    if update.status is not None and current_user.role not in ("admin", "owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can change status",
+        )
+
+    # Cannot set anyone to owner (except by direct DB update)
+    if update.role == "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot assign owner role via API",
         )
 
     supabase = get_supabase_client()
@@ -130,6 +162,9 @@ async def update_user(
             )
 
         profile = response.data[0]
+        permissions = profile.get("permissions", [])
+        if permissions is None:
+            permissions = []
 
         return UserResponse(
             id=profile["id"],
@@ -137,6 +172,8 @@ async def update_user(
             display_name=profile.get("display_name"),
             role=profile.get("role", "user"),
             status=profile.get("status", "active"),
+            permissions=permissions,
+            linked_player_id=profile.get("linked_player_id"),
             created_at=profile.get("created_at"),
             updated_at=profile.get("updated_at"),
         )
@@ -246,7 +283,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         strokes_9holes = []
         strokes_18holes = []
         stableford_points_normalized = []  # Normalized to 18-hole equivalent
-        # HVP data: list of (normalized_points, round_date) tuples
+        # HVP data: list of (strokes_over_par_normalized, round_date) tuples
+        # HVP = average strokes over par (normalized to 18 holes)
         hvp_data = []
         best_score_18 = None
         best_score_18_info = None
@@ -294,6 +332,7 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
             round_strokes = 0
             round_putts = 0
             round_stableford = 0
+            round_par = 0  # Total par for played holes
 
             for hole_num in holes_to_count:
                 hole_num_str = str(hole_num)
@@ -308,8 +347,9 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 if not hole_data:
                     continue
 
-                par = hole_data.get("par")
+                par = hole_data.get("par", 4)
                 handicap = hole_data.get("handicap", 1)
+                round_par += par
 
                 # Track strokes by par
                 if par == 3:
@@ -379,7 +419,6 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 total_putts.append(round_putts)
 
             # Track Stableford points - normalize to 18-hole equivalent
-            # For HVP, we track ALL rounds (not just stableford mode) and normalize 9-hole
             if round_stableford > 0:
                 if is_9_hole_round:
                     # Double the points to get 18-hole equivalent
@@ -391,13 +430,22 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 if round_data.get("game_mode") == "stableford":
                     stableford_points_normalized.append(normalized_points)
 
-                # For HVP - all rounds with stableford points calculated
+            # For HVP - calculate strokes over par (normalized to 18 holes)
+            # HVP = average (gross strokes - par), normalized to 18 holes
+            if round_strokes > 0 and round_par > 0:
+                strokes_over_par = round_strokes - round_par
+                if is_9_hole_round:
+                    # Double to normalize to 18-hole equivalent
+                    strokes_over_par_normalized = strokes_over_par * 2
+                else:
+                    strokes_over_par_normalized = strokes_over_par
+
                 round_date_str = round_data.get("round_date", "")
                 try:
                     round_date_parsed = datetime.strptime(round_date_str, "%Y-%m-%d").date()
                 except (ValueError, TypeError):
                     round_date_parsed = None
-                hvp_data.append((normalized_points, round_date_parsed))
+                hvp_data.append((strokes_over_par_normalized, round_date_parsed))
 
         # Calculate averages
         avg_par3 = sum(par3_strokes) / len(par3_strokes) if par3_strokes else None
@@ -412,8 +460,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         avg_stableford = sum(stableford_points_normalized) / len(stableford_points_normalized) if stableford_points_normalized else None
 
         # Calculate HVP (Handicap Virtual Promedio) for different periods
-        # HVP = 36 - average Stableford points (normalized to 18 holes)
-        # 36 points = handicap 0 (scratch), 30 points = handicap 6, etc.
+        # HVP = average strokes over par (normalized to 18 holes)
+        # Example: if you shoot 86 on a par 72, HVP = 14
         hvp_total = None
         hvp_month = None
         hvp_quarter = None
@@ -421,24 +469,20 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
 
         if hvp_data:
             # Total (all-time)
-            all_points = [p for p, _ in hvp_data]
-            avg_points_total = sum(all_points) / len(all_points)
-            hvp_total = 36 - avg_points_total
+            all_over_par = [p for p, _ in hvp_data]
+            hvp_total = sum(all_over_par) / len(all_over_par)
 
             # Filter by periods
-            month_points = [p for p, d in hvp_data if d and d >= current_month_start]
-            quarter_points = [p for p, d in hvp_data if d and d >= current_quarter_start]
-            year_points = [p for p, d in hvp_data if d and d >= current_year_start]
+            month_over_par = [p for p, d in hvp_data if d and d >= current_month_start]
+            quarter_over_par = [p for p, d in hvp_data if d and d >= current_quarter_start]
+            year_over_par = [p for p, d in hvp_data if d and d >= current_year_start]
 
-            if month_points:
-                avg_month = sum(month_points) / len(month_points)
-                hvp_month = 36 - avg_month
-            if quarter_points:
-                avg_quarter = sum(quarter_points) / len(quarter_points)
-                hvp_quarter = 36 - avg_quarter
-            if year_points:
-                avg_year = sum(year_points) / len(year_points)
-                hvp_year = 36 - avg_year
+            if month_over_par:
+                hvp_month = sum(month_over_par) / len(month_over_par)
+            if quarter_over_par:
+                hvp_quarter = sum(quarter_over_par) / len(quarter_over_par)
+            if year_over_par:
+                hvp_year = sum(year_over_par) / len(year_over_par)
 
         return UserStats(
             total_rounds=total_rounds,
@@ -468,6 +512,236 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         )
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+# ============================================
+# OWNER-ONLY ENDPOINTS
+# ============================================
+
+
+@router.get("/owner/users", response_model=list[UserWithStats])
+async def list_users_with_stats(owner_user: UserResponse = Depends(get_owner_user)):
+    """List all users with their stats (owner only)."""
+    supabase = get_supabase_admin_client()
+
+    try:
+        # Get all users from auth
+        users_response = supabase.auth.admin.list_users()
+        users = users_response if isinstance(users_response, list) else []
+
+        # Get all profiles
+        profiles_response = supabase.table("profiles").select("*").execute()
+        profiles = {p["id"]: p for p in profiles_response.data} if profiles_response.data else {}
+
+        # Get saved players for linking
+        players_response = supabase.table("saved_players").select("id, name").execute()
+        players = {p["id"]: p["name"] for p in (players_response.data or [])}
+
+        # Get round counts per user
+        rounds_response = supabase.table("rounds").select("user_id").execute()
+        round_counts: Dict[str, int] = {}
+        for r in (rounds_response.data or []):
+            uid = r.get("user_id")
+            if uid:
+                round_counts[uid] = round_counts.get(uid, 0) + 1
+
+        result = []
+        for user in users:
+            profile = profiles.get(user.id, {})
+            permissions = profile.get("permissions", [])
+            if permissions is None:
+                permissions = []
+            linked_player_id = profile.get("linked_player_id")
+
+            result.append(UserWithStats(
+                id=user.id,
+                email=user.email,
+                display_name=profile.get("display_name"),
+                role=profile.get("role", "user"),
+                status=profile.get("status", "active"),
+                permissions=permissions,
+                linked_player_id=linked_player_id,
+                linked_player_name=players.get(linked_player_id) if linked_player_id else None,
+                total_rounds=round_counts.get(user.id, 0),
+                created_at=user.created_at,
+                updated_at=profile.get("updated_at", user.created_at),
+            ))
+
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.get("/owner/rounds")
+async def list_all_rounds(
+    owner_user: UserResponse = Depends(get_owner_user),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List all rounds from all users (owner only)."""
+    supabase = get_supabase_admin_client()
+
+    try:
+        # Get rounds with pagination
+        rounds_response = (
+            supabase.table("rounds")
+            .select("*")
+            .order("round_date", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+
+        # Get profiles for user names
+        profiles_response = supabase.table("profiles").select("id, display_name").execute()
+        profiles = {p["id"]: p.get("display_name") for p in (profiles_response.data or [])}
+
+        rounds = []
+        for r in (rounds_response.data or []):
+            user_id = r.get("user_id")
+            rounds.append({
+                **r,
+                "user_display_name": profiles.get(user_id) or "Unknown",
+            })
+
+        # Get total count
+        count_response = supabase.table("rounds").select("id", count="exact").execute()
+        total = count_response.count if hasattr(count_response, 'count') else len(rounds_response.data or [])
+
+        return {
+            "rounds": rounds,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.patch("/owner/users/{user_id}/permissions", response_model=UserResponse)
+async def update_user_permissions(
+    user_id: str,
+    update: UserPermissionsUpdate,
+    owner_user: UserResponse = Depends(get_owner_user),
+):
+    """Update user permissions (owner only)."""
+    supabase = get_supabase_admin_client()
+
+    try:
+        # Validate permissions
+        valid_permissions = [
+            "rounds.create",
+            "rounds.import",
+            "courses.create",
+            "courses.edit",
+            "players.manage",
+        ]
+        for perm in update.permissions:
+            if perm not in valid_permissions:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid permission: {perm}. Valid: {valid_permissions}",
+                )
+
+        # Update permissions
+        response = (
+            supabase.table("profiles")
+            .update({"permissions": update.permissions})
+            .eq("id", user_id)
+            .execute()
+        )
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        profile = response.data[0]
+
+        # Get user email from auth
+        user_response = supabase.auth.admin.get_user_by_id(user_id)
+        email = user_response.user.email if user_response and user_response.user else ""
+
+        return UserResponse(
+            id=profile["id"],
+            email=email,
+            display_name=profile.get("display_name"),
+            role=profile.get("role", "user"),
+            status=profile.get("status", "active"),
+            permissions=profile.get("permissions", []),
+            linked_player_id=profile.get("linked_player_id"),
+            created_at=profile.get("created_at"),
+            updated_at=profile.get("updated_at"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.get("/owner/stats")
+async def get_owner_stats(owner_user: UserResponse = Depends(get_owner_user)):
+    """Get global platform statistics (owner only)."""
+    supabase = get_supabase_admin_client()
+
+    try:
+        # Total users
+        users_response = supabase.auth.admin.list_users()
+        total_users = len(users_response) if isinstance(users_response, list) else 0
+
+        # Total rounds
+        rounds_response = supabase.table("rounds").select("id, round_date, is_finished", count="exact").execute()
+        total_rounds = rounds_response.count if hasattr(rounds_response, 'count') else len(rounds_response.data or [])
+
+        # Finished rounds
+        finished_rounds = len([r for r in (rounds_response.data or []) if r.get("is_finished")])
+
+        # Rounds this month
+        today = date.today()
+        month_start = date(today.year, today.month, 1).isoformat()
+        rounds_this_month = len([
+            r for r in (rounds_response.data or [])
+            if r.get("round_date", "") >= month_start
+        ])
+
+        # Total courses
+        courses_response = supabase.table("courses").select("id", count="exact").execute()
+        total_courses = courses_response.count if hasattr(courses_response, 'count') else len(courses_response.data or [])
+
+        # Total saved players
+        players_response = supabase.table("saved_players").select("id", count="exact").execute()
+        total_players = players_response.count if hasattr(players_response, 'count') else len(players_response.data or [])
+
+        # Users by role
+        profiles_response = supabase.table("profiles").select("role").execute()
+        roles_count: Dict[str, int] = {"user": 0, "admin": 0, "owner": 0}
+        for p in (profiles_response.data or []):
+            role = p.get("role", "user")
+            roles_count[role] = roles_count.get(role, 0) + 1
+
+        return {
+            "total_users": total_users,
+            "users_by_role": roles_count,
+            "total_rounds": total_rounds,
+            "finished_rounds": finished_rounds,
+            "rounds_this_month": rounds_this_month,
+            "total_courses": total_courses,
+            "total_players": total_players,
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

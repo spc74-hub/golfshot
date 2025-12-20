@@ -16,6 +16,7 @@ import { RoundCard } from "@/pages/RoundCard";
 import { ImportRound } from "@/pages/ImportRound";
 import { Players } from "@/pages/Players";
 import { Stats } from "@/pages/Stats";
+import { OwnerPanel } from "@/pages/OwnerPanel";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -124,6 +125,18 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Stats />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Owner routes */}
+            <Route
+              path="/owner"
+              element={
+                <ProtectedRoute requireOwner>
+                  <Layout>
+                    <OwnerPanel />
                   </Layout>
                 </ProtectedRoute>
               }

@@ -3,6 +3,19 @@ from typing import Optional, Literal
 from datetime import datetime
 
 
+# Permission types
+Permission = Literal[
+    "rounds.create",
+    "rounds.import",
+    "courses.create",
+    "courses.edit",
+    "players.manage"
+]
+
+# Role types
+Role = Literal["user", "admin", "owner"]
+
+
 # Auth schemas
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -26,16 +39,40 @@ class UserResponse(BaseModel):
     id: str
     email: str
     display_name: Optional[str] = None
-    role: Literal["user", "admin"] = "user"
+    role: Role = "user"
     status: Literal["active", "disabled"] = "active"
+    permissions: list[str] = []
+    linked_player_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
 
 class UserUpdate(BaseModel):
     display_name: Optional[str] = None
-    role: Optional[Literal["user", "admin"]] = None
+    role: Optional[Role] = None
     status: Optional[Literal["active", "disabled"]] = None
+    permissions: Optional[list[str]] = None
+    linked_player_id: Optional[str] = None
+
+
+class UserPermissionsUpdate(BaseModel):
+    """Schema for updating user permissions (owner only)"""
+    permissions: list[str]
+
+
+class UserWithStats(BaseModel):
+    """Extended user info with stats for owner panel"""
+    id: str
+    email: str
+    display_name: Optional[str] = None
+    role: Role = "user"
+    status: Literal["active", "disabled"] = "active"
+    permissions: list[str] = []
+    linked_player_id: Optional[str] = None
+    linked_player_name: Optional[str] = None
+    total_rounds: int = 0
+    created_at: datetime
+    updated_at: datetime
 
 
 # Tee schema

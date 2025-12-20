@@ -1,12 +1,27 @@
 // User types
+export type Role = "user" | "admin" | "owner";
+export type Permission =
+  | "rounds.create"
+  | "rounds.import"
+  | "courses.create"
+  | "courses.edit"
+  | "players.manage";
+
 export interface User {
   id: string;
   email: string;
   displayName: string | null;
-  role: "user" | "admin";
+  role: Role;
   status: "active" | "disabled";
+  permissions: Permission[];
+  linkedPlayerId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UserWithStats extends User {
+  linkedPlayerName: string | null;
+  totalRounds: number;
 }
 
 // Course types
@@ -298,4 +313,27 @@ export interface UpdateSavedPlayerInput {
   name?: string;
   handicapIndex?: number;
   preferredTee?: string;
+}
+
+// Owner stats types
+export interface OwnerStats {
+  totalUsers: number;
+  usersByRole: {
+    user: number;
+    admin: number;
+    owner: number;
+  };
+  totalRounds: number;
+  finishedRounds: number;
+  roundsThisMonth: number;
+  totalCourses: number;
+  totalPlayers: number;
+}
+
+// Owner rounds list response
+export interface OwnerRoundsResponse {
+  rounds: (Round & { userDisplayName: string })[];
+  total: number;
+  limit: number;
+  offset: number;
 }

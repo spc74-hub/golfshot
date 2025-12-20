@@ -9,6 +9,7 @@ import {
   LogOut,
   Flag,
   BarChart3,
+  Crown,
 } from "lucide-react";
 
 interface LayoutProps {
@@ -16,7 +17,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children }: LayoutProps) {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, isOwner } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -96,7 +97,20 @@ export function Layout({ children }: LayoutProps) {
               <BarChart3 className="h-5 w-5" />
               <span className="text-xs mt-1">Stats</span>
             </Link>
-            {isAdmin && (
+            {isOwner && (
+              <Link
+                to="/owner"
+                className={`flex flex-col items-center justify-center w-full h-full ${
+                  location.pathname.startsWith("/owner")
+                    ? "text-primary"
+                    : "text-muted-foreground"
+                }`}
+              >
+                <Crown className="h-5 w-5" />
+                <span className="text-xs mt-1">Owner</span>
+              </Link>
+            )}
+            {isAdmin && !isOwner && (
               <Link
                 to="/admin"
                 className={`flex flex-col items-center justify-center w-full h-full ${

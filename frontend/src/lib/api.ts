@@ -5,12 +5,16 @@ import type {
   CreateRoundInput,
   UpdateRoundInput,
   User,
+  UserWithStats,
   AdminStats,
   UserStats,
+  OwnerStats,
+  OwnerRoundsResponse,
   ImportedRoundData,
   SavedPlayer,
   CreateSavedPlayerInput,
   UpdateSavedPlayerInput,
+  Permission,
 } from "@/types";
 
 // Get API URL from environment or use default
@@ -429,5 +433,99 @@ export const playersApi = {
 
   delete: async (id: string): Promise<void> => {
     return fetchWithAuth(`/players/${id}`, { method: "DELETE" });
+  },
+};
+
+// Transform backend User (snake_case) to frontend User (camelCase)
+function transformUser(backendUser: Record<string, unknown>): User {
+  return {
+    id: backendUser.id as string,
+    email: backendUser.email as string,
+    displayName: (backendUser.display_name ?? backendUser.displayName) as string | null,
+    role: backendUser.role as User["role"],
+    status: backendUser.status as User["status"],
+    permissions: (backendUser.permissions ?? []) as Permission[],
+    linkedPlayerId: (backendUser.linked_player_id ?? backendUser.linkedPlayerId) as string | null,
+    createdAt: (backendUser.created_at ?? backendUser.createdAt) as string,
+    updatedAt: (backendUser.updated_at ?? backendUser.updatedAt) as string,
+  };
+}
+
+// Transform backend UserWithStats to frontend UserWithStats
+function transformUserWithStats(backendUser: Record<string, unknown>): UserWithStats {
+  return {
+    ...transformUser(backendUser),
+    linkedPlayerName: (backendUser.linked_player_name ?? backendUser.linkedPlayerName) as string | null,
+    totalRounds: (backendUser.total_rounds ?? backendUser.totalRounds) as number,
+  };
+}
+
+// Owner API (owner-only endpoints)
+export const ownerApi = {
+  // Get all users with stats (owner only)
+  listUsers: async (): Promise<UserWithStats[]> => {
+    const data = await fetchWithAuth("/users/owner/users");
+    return (data as Record<string, unknown>[]).map(transformUserWithStats);
+  },
+
+  // Get all rounds from all users (owner only)
+  listRounds: async (limit = 50, offset = 0): Promise<OwnerRoundsResponse> => {
+    const data = await fetchWithAuth(`/users/owner/rounds?limit=${limit}&offset=${offset}`);
+    const response = data as Record<string, unknown>;
+    return {
+      rounds: ((response.rounds || []) as Record<string, unknown>[]).map((r) => ({
+        ...transformRound(r),
+        userDisplayName: (r.user_display_name ?? r.userDisplayName) as string,
+      })),
+      total: response.total as number,
+      limit: response.limit as number,
+      offset: response.offset as number,
+    };
+  },
+
+  // Update user permissions (owner only)
+  updatePermissions: async (userId: string, permissions: Permission[]): Promise<User> => {
+    const data = await fetchWithAuth(`/users/owner/users/${userId}/permissions`, {
+      method: "PATCH",
+      body: JSON.stringify({ permissions }),
+    });
+    return transformUser(data as Record<string, unknown>);
+  },
+
+  // Get global platform stats (owner only)
+  getStats: async (): Promise<OwnerStats> => {
+    const data = await fetchWithAuth("/users/owner/stats") as Record<string, unknown>;
+    const usersByRole = data.users_by_role as Record<string, number> | undefined;
+    return {
+      totalUsers: data.total_users as number,
+      usersByRole: {
+        user: usersByRole?.user ?? 0,
+        admin: usersByRole?.admin ?? 0,
+        owner: usersByRole?.owner ?? 0,
+      },
+      totalRounds: data.total_rounds as number,
+      finishedRounds: data.finished_rounds as number,
+      roundsThisMonth: data.rounds_this_month as number,
+      totalCourses: data.total_courses as number,
+      totalPlayers: data.total_players as number,
+    };
+  },
+
+  // Update user role (owner only)
+  updateRole: async (userId: string, role: User["role"]): Promise<User> => {
+    const data = await fetchWithAuth(`/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    });
+    return transformUser(data as Record<string, unknown>);
+  },
+
+  // Link user to a saved player
+  linkPlayer: async (userId: string, playerId: string | null): Promise<User> => {
+    const data = await fetchWithAuth(`/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ linked_player_id: playerId }),
+    });
+    return transformUser(data as Record<string, unknown>);
   },
 };

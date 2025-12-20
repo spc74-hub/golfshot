@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
-import type { User } from "@/types";
+import type { User, Permission } from "@/types";
 
 interface AuthContextType {
   user: User | null;
@@ -9,6 +9,8 @@ interface AuthContextType {
   register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
   isAdmin: boolean;
+  isOwner: boolean;
+  hasPermission: (permission: Permission) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -92,6 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         displayName: profile?.display_name || null,
         role: profile?.role || "user",
         status: profile?.status || "active",
+        permissions: (profile?.permissions || []) as Permission[],
+        linkedPlayerId: profile?.linked_player_id || null,
         createdAt: profile?.created_at || new Date().toISOString(),
         updatedAt: profile?.updated_at || new Date().toISOString(),
       });
@@ -104,6 +108,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         displayName: null,
         role: "user",
         status: "active",
+        permissions: [],
+        linkedPlayerId: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
@@ -152,13 +158,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("access_token");
   }
 
+  const isOwner = user?.role === "owner";
+  const isAdmin = user?.role === "admin" || isOwner;
+
+  function hasPermission(permission: Permission): boolean {
+    if (!user) return false;
+    // Owner and admin have all permissions
+    if (user.role === "owner" || user.role === "admin") return true;
+    return user.permissions.includes(permission);
+  }
+
   const value = {
     user,
     loading,
     login,
     register,
     logout,
-    isAdmin: user?.role === "admin",
+    isAdmin,
+    isOwner,
+    hasPermission,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

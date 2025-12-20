@@ -4,10 +4,11 @@ import { useAuth } from "@/context/AuthContext";
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  requireOwner?: boolean;
 }
 
-export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
-  const { user, loading, isAdmin } = useAuth();
+export function ProtectedRoute({ children, requireAdmin = false, requireOwner = false }: ProtectedRouteProps) {
+  const { user, loading, isAdmin, isOwner } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -20,6 +21,10 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (requireOwner && !isOwner) {
+    return <Navigate to="/" replace />;
   }
 
   if (requireAdmin && !isAdmin) {
