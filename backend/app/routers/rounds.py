@@ -477,8 +477,6 @@ async def save_imported_round(
         course_length = import_data.get("course_length", "18" if num_holes == 18 else "front9")
 
         # Create the imported round
-        # NOTE: is_imported field requires adding column to Supabase:
-        # ALTER TABLE rounds ADD COLUMN is_imported BOOLEAN DEFAULT FALSE;
         new_round = {
             "user_id": current_user.id,
             "od_id": int(time.time() * 1000),
@@ -498,6 +496,7 @@ async def save_imported_round(
             "completed_holes": completed_holes,
             "players": [player],
             "is_finished": True,
+            "is_imported": True,
         }
 
         response = supabase.table("rounds").insert(new_round).execute()
