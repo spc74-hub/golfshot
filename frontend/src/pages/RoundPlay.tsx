@@ -720,10 +720,10 @@ export function RoundPlay() {
                 </div>
               </div>
 
-              {/* Points */}
-              {round.gameMode === "stableford" && (
+              {/* Points - show for stableford and matchplay */}
+              {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
                 <div className="space-y-1">
-                  <Label className="text-xs">Puntos</Label>
+                  <Label className="text-xs">Puntos Hoyo</Label>
                   <div className="h-10 flex items-center justify-center">
                     <span className="text-2xl font-bold text-primary">
                       {getHolePoints(player)}

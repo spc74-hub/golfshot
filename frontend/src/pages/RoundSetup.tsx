@@ -129,11 +129,12 @@ export function RoundSetup() {
     [courses, selectedCourseId]
   );
 
-  // Calculate initial HDJ for a player
+  // Calculate initial HDJ for a player (always calculate, even if useHandicap is false)
   const calculateInitialHDJ = (handicapIndex: number, teeName: string): number => {
-    if (!selectedCourse || !useHandicap) return 0;
+    if (!selectedCourse) return 0;
     const tee = selectedCourse.tees.find((t) => t.name === teeName);
     if (!tee) return 0;
+    // Always calculate the real HDJ - the useHandicap flag determines how it's used during play
     return calculatePlayingHandicap(handicapIndex, tee.slope, handicapPercentage);
   };
 

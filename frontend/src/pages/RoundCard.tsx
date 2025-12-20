@@ -108,6 +108,7 @@ export function RoundCard() {
     let points = 0;
     let stablefordPoints = 0;
     let holesPlayed = 0;
+    let parPlayed = 0; // Par of holes actually played
 
     holeNumbers.forEach(holeNum => {
       const score = player.scores[holeNum];
@@ -119,10 +120,13 @@ export function RoundCard() {
         const stbfPoints = getStablefordPoints(player, holeNum);
         if (stbfPoints !== null) stablefordPoints += stbfPoints;
         holesPlayed++;
+        // Add par of this hole
+        const holeData = course?.holesData.find((h: HoleData) => h.number === holeNum);
+        if (holeData) parPlayed += holeData.par;
       }
     });
 
-    return { strokes, putts, points, stablefordPoints, holesPlayed };
+    return { strokes, putts, points, stablefordPoints, holesPlayed, parPlayed };
   };
 
   // Get par for a set of holes
@@ -317,10 +321,11 @@ export function RoundCard() {
           points: front9Totals.points + back9Totals.points,
           stablefordPoints: front9Totals.stablefordPoints + back9Totals.stablefordPoints,
           holesPlayed: front9Totals.holesPlayed + back9Totals.holesPlayed,
+          parPlayed: front9Totals.parPlayed + back9Totals.parPlayed,
         };
 
-        // Calculate differences vs objectives
-        const strokesDiff = totalTotals.strokes - totalPar;
+        // Calculate differences vs objectives (based on holes actually played, not total course)
+        const strokesDiff = totalTotals.strokes - totalTotals.parPlayed;
         const puttsDiff = totalTotals.putts - (totalTotals.holesPlayed * 2);
         const expectedPoints = totalTotals.holesPlayed * 2;
         const pointsDiff = totalTotals.stablefordPoints - expectedPoints;
