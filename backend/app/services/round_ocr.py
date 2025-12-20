@@ -214,22 +214,53 @@ def validate_and_normalize_round(data: dict) -> dict:
 
     # Holes data
     holes_data = data.get("holes_data", [])
-    num_holes = len(holes_data)
-    if num_holes not in [9, 18]:
-        num_holes = 18 if num_holes > 9 else 9
+
+    # Only keep holes that have actual strokes data (not hallucinated)
+    # Filter to holes with valid strokes that differ from default
+    valid_holes = [h for h in holes_data if h.get("strokes") and h.get("strokes") > 0]
+
+    # Detect if this is a back 9 round by checking hole numbers
+    hole_numbers = [h.get("number", 0) for h in valid_holes]
+    is_back9 = all(n >= 10 for n in hole_numbers if n > 0)
+    is_front9 = all(n <= 9 for n in hole_numbers if n > 0)
+
+    # Determine actual number of holes from valid data
+    num_holes = len(valid_holes)
+    if num_holes > 18:
+        num_holes = 18
+    elif num_holes > 9 and num_holes < 18:
+        # If we have between 10-17 holes, likely OCR error - take first 9 or 18
+        if is_back9:
+            num_holes = min(9, num_holes)  # Back 9 should only have 9 holes
+        else:
+            num_holes = 9 if num_holes < 14 else 18
+    elif num_holes == 0:
+        num_holes = 9  # Default to 9 if no valid data
 
     normalized_holes = []
     total_strokes = 0
     total_par = 0
 
-    for i, hole in enumerate(holes_data[:num_holes], start=1):
+    # Process only the valid holes up to num_holes
+    for i, hole in enumerate(valid_holes[:num_holes]):
+        # Preserve original hole number if it exists and is valid
+        original_number = hole.get("number", 0)
+        if is_back9 and original_number >= 10 and original_number <= 18:
+            hole_number = original_number
+        elif is_front9 and original_number >= 1 and original_number <= 9:
+            hole_number = original_number
+        else:
+            # Assign sequential number based on detection
+            hole_number = (i + 10) if is_back9 else (i + 1)
+
         par = hole.get("par", 4)
         if par not in [3, 4, 5]:
             par = 4
 
-        handicap = hole.get("handicap", i)
-        if not (1 <= handicap <= num_holes):
-            handicap = i
+        # For handicap, use original if valid for 18-hole course
+        handicap = hole.get("handicap", 1)
+        if not (1 <= handicap <= 18):
+            handicap = i + 1
 
         strokes = hole.get("strokes", par)
         if not isinstance(strokes, (int, float)) or strokes < 1:
@@ -250,28 +281,13 @@ def validate_and_normalize_round(data: dict) -> dict:
         total_par += par
 
         normalized_holes.append({
-            "number": i,
+            "number": hole_number,
             "par": par,
             "handicap": handicap,
             "strokes": strokes,
             "distance": distance,
             "putts": putts,
         })
-
-    # Fill missing holes with defaults if needed
-    while len(normalized_holes) < num_holes:
-        i = len(normalized_holes) + 1
-        par = 4
-        normalized_holes.append({
-            "number": i,
-            "par": par,
-            "handicap": i,
-            "strokes": par,
-            "distance": 350,
-            "putts": 0,
-        })
-        total_strokes += par
-        total_par += par
 
     # Totals
     totals = data.get("totals", {})
@@ -284,6 +300,14 @@ def validate_and_normalize_round(data: dict) -> dict:
         calculated_hdj = calculate_hdj_from_stableford(
             total_strokes, total_par, stableford_points, num_holes
         )
+
+    # Determine course_length based on detected holes
+    if num_holes == 18:
+        course_length = "18"
+    elif is_back9:
+        course_length = "back9"
+    else:
+        course_length = "front9"
 
     return {
         "course": {
@@ -302,6 +326,7 @@ def validate_and_normalize_round(data: dict) -> dict:
             "calculated_hdj": calculated_hdj,
         },
         "holes": num_holes,
+        "course_length": course_length,
         "holes_data": normalized_holes,
         "totals": {
             "strokes": total_strokes,
