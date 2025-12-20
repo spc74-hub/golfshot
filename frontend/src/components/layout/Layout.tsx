@@ -41,6 +41,18 @@ export function Layout({ children }: LayoutProps) {
           <nav className="ml-auto flex items-center space-x-4">
             {user && (
               <>
+                {isOwner && (
+                  <Link to="/owner" className="hidden md:flex items-center text-amber-600 hover:text-amber-700">
+                    <Crown className="h-5 w-5 mr-1" />
+                    <span className="text-sm font-medium">Owner</span>
+                  </Link>
+                )}
+                {isAdmin && !isOwner && (
+                  <Link to="/admin" className="hidden md:flex items-center text-muted-foreground hover:text-foreground">
+                    <Settings className="h-5 w-5 mr-1" />
+                    <span className="text-sm font-medium">Admin</span>
+                  </Link>
+                )}
                 <span className="text-sm text-muted-foreground hidden md:inline">
                   {user.displayName || user.email}
                 </span>
