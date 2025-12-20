@@ -486,7 +486,7 @@ export function ImportRound() {
               </div>
 
               {/* Totals */}
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <Badge variant="outline" className="text-lg px-4 py-2">
                   Golpes: {extractedData.totals.strokes}
                 </Badge>
@@ -498,6 +498,21 @@ export function ImportRound() {
                     ? `+${extractedData.totals.strokes - extractedData.totals.par}`
                     : extractedData.totals.strokes - extractedData.totals.par}
                 </Badge>
+                {(extractedData.totals.putts ?? 0) > 0 && (
+                  <Badge variant="outline" className="text-lg px-4 py-2">
+                    Putts: {extractedData.totals.putts}
+                  </Badge>
+                )}
+                {extractedData.totals.stableford_points > 0 && (
+                  <Badge variant="outline" className="text-lg px-4 py-2 bg-primary/10">
+                    Stableford: {extractedData.totals.stableford_points} pts
+                  </Badge>
+                )}
+                {(extractedData.round.calculated_hdj ?? 0) > 0 && (
+                  <Badge variant="default" className="text-lg px-4 py-2">
+                    HDJ calculado: {extractedData.round.calculated_hdj}
+                  </Badge>
+                )}
               </div>
 
               {/* Holes Data */}
@@ -511,18 +526,25 @@ export function ImportRound() {
                         <TableHead className="w-16">Par</TableHead>
                         <TableHead className="w-16">Hcp</TableHead>
                         <TableHead className="w-20">Golpes</TableHead>
+                        {extractedData.holes_data.some(h => h.putts && h.putts > 0) && (
+                          <TableHead className="w-16">Putts</TableHead>
+                        )}
                         <TableHead className="w-16">+/-</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {extractedData.holes_data.map((hole) => {
                         const diff = hole.strokes - hole.par;
+                        const hasPutts = extractedData.holes_data.some(h => h.putts && h.putts > 0);
                         return (
                           <TableRow key={hole.number}>
                             <TableCell className="font-medium">{hole.number}</TableCell>
                             <TableCell>{hole.par}</TableCell>
                             <TableCell>{hole.handicap}</TableCell>
                             <TableCell className="font-bold">{hole.strokes}</TableCell>
+                            {hasPutts && (
+                              <TableCell>{hole.putts || "-"}</TableCell>
+                            )}
                             <TableCell>
                               <span
                                 className={

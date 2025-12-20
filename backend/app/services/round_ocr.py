@@ -19,14 +19,15 @@ This is a historical round scorecard from a golf app. Extract the following info
 2. ROUND INFORMATION:
    - Date of the round (format: YYYY-MM-DD)
    - Player name
+   - Handicap index if visible (NOT playing handicap/HDJ - the index like 18.0)
 
 3. SCORES - For each hole (1-18 or 1-9):
    - Hole number
    - Par value
    - Handicap/Stroke Index (if visible)
    - Strokes taken (the actual score)
-   - Net score (if shown)
-   - Stableford points (if shown)
+   - Putts (number of putts on green - look for "Putts" row)
+   - Stableford points (if shown - look for "Round Score" or similar)
 
 4. COURSE DATA (if visible):
    - Distance for each hole
@@ -50,18 +51,20 @@ Return ONLY valid JSON in this exact format:
     "handicap_index": 14.2
   },
   "holes_data": [
-    {"number": 1, "par": 5, "handicap": 8, "strokes": 6, "distance": 492},
-    {"number": 2, "par": 3, "handicap": 18, "strokes": 2, "distance": 126}
+    {"number": 1, "par": 5, "handicap": 8, "strokes": 6, "putts": 2, "stableford_points": 2, "distance": 492},
+    {"number": 2, "par": 3, "handicap": 18, "strokes": 2, "putts": 1, "stableford_points": 4, "distance": 126}
   ],
   "totals": {
     "strokes": 86,
     "par": 71,
+    "putts": 34,
     "stableford_points": 35
   }
 }
 
 Important rules:
 - Extract the ACTUAL strokes taken by the player for each hole
+- IMPORTANT: Look for the "Putts" row in the scorecard and extract putts for each hole
 - If you see colored cells (green=birdie, blue/grey=par, red=bogey+), use that to validate scores
 - Par values are 3, 4, or 5 only
 - Handicap values are 1-18 for 18 holes
@@ -130,6 +133,55 @@ async def extract_round_data(image_base64: str, media_type: str = "image/jpeg") 
         raise ValueError(f"Failed to parse AI response as JSON: {e}\nResponse: {response_text[:500]}")
 
 
+def calculate_hdj_from_stableford(total_strokes: int, total_par: int, stableford_points: int, num_holes: int) -> int:
+    """
+    Calculate HDJ (playing handicap) from Stableford points.
+
+    In Stableford scoring:
+    - Points = 2 + (par - strokes) + extra_strokes_from_hdj
+    - For 18 holes, 36 points = playing to handicap exactly
+    - For 9 holes, 18 points = playing to handicap exactly
+
+    The formula to derive HDJ:
+    - Expected points with 0 HDJ = 36 (18 holes) or 18 (9 holes)
+    - Each stroke over par without HDJ = -1 point
+    - Actual points = expected_points - (strokes - par - HDJ)
+    - Therefore: HDJ = total_strokes - total_par - (expected_points - stableford_points)
+
+    Simplified: HDJ = total_strokes - total_par - expected_points + stableford_points
+    """
+    if stableford_points <= 0:
+        return 0
+
+    expected_points = 36 if num_holes == 18 else 18
+
+    # HDJ = strokes - par - (expected - actual)
+    # Example: 87 strokes, par 72, 43 points on 18 holes
+    # HDJ = 87 - 72 - (36 - 43) = 15 + 7 = 22... but wait
+    # Let's recalculate properly:
+    # With HDJ of 18, you get 18 extra strokes distributed
+    # If you shot 87 on par 72 = +15 over par
+    # With HDJ 18, your net score = 87 - 18 = 69, which is 3 under par
+    # That would give roughly 36 + 3 = 39 points... but he got 43
+    #
+    # Actually the correct formula:
+    # Stableford points = 2 per hole base + bonus strokes per hole
+    # For 18 holes: base = 36 points
+    # Net score = gross score - HDJ = strokes relative to par after HDJ adjustment
+    # Points = 36 - (gross_strokes - par - HDJ) = 36 - gross + par + HDJ
+    # HDJ = points - 36 + gross - par = points + (gross - par) - 36
+
+    calculated_hdj = stableford_points + (total_strokes - total_par) - expected_points
+
+    # Validate: HDJ should be between 0 and 54
+    if calculated_hdj < 0:
+        calculated_hdj = 0
+    elif calculated_hdj > 54:
+        calculated_hdj = 54
+
+    return calculated_hdj
+
+
 def validate_and_normalize_round(data: dict) -> dict:
     """
     Validate and normalize the extracted round data.
@@ -190,6 +242,11 @@ def validate_and_normalize_round(data: dict) -> dict:
             distance = 350 if par == 4 else (180 if par == 3 else 480)
         distance = int(distance)
 
+        putts = hole.get("putts", 0)
+        if not isinstance(putts, (int, float)) or putts < 0:
+            putts = 0
+        putts = int(putts)
+
         total_strokes += strokes
         total_par += par
 
@@ -199,6 +256,7 @@ def validate_and_normalize_round(data: dict) -> dict:
             "handicap": handicap,
             "strokes": strokes,
             "distance": distance,
+            "putts": putts,
         })
 
     # Fill missing holes with defaults if needed
@@ -211,6 +269,7 @@ def validate_and_normalize_round(data: dict) -> dict:
             "handicap": i,
             "strokes": par,
             "distance": 350,
+            "putts": 0,
         })
         total_strokes += par
         total_par += par
@@ -218,6 +277,14 @@ def validate_and_normalize_round(data: dict) -> dict:
     # Totals
     totals = data.get("totals", {})
     stableford_points = totals.get("stableford_points", 0)
+    total_putts = totals.get("putts", sum(h.get("putts", 0) for h in normalized_holes))
+
+    # Calculate HDJ from Stableford points if available
+    calculated_hdj = 0
+    if stableford_points > 0:
+        calculated_hdj = calculate_hdj_from_stableford(
+            total_strokes, total_par, stableford_points, num_holes
+        )
 
     return {
         "course": {
@@ -233,6 +300,7 @@ def validate_and_normalize_round(data: dict) -> dict:
             "date": round_date,
             "player_name": player_name,
             "handicap_index": float(handicap_index),
+            "calculated_hdj": calculated_hdj,
         },
         "holes": num_holes,
         "holes_data": normalized_holes,
@@ -240,5 +308,6 @@ def validate_and_normalize_round(data: dict) -> dict:
             "strokes": total_strokes,
             "par": total_par,
             "stableford_points": stableford_points,
+            "putts": total_putts,
         }
     }

@@ -447,7 +447,14 @@ async def save_imported_round(
         tee_played = course_info.get("tee_played", {})
         tee_slope = tee_played.get("slope", 113)
         player_handicap_index = round_info.get("handicap_index", 24.0)
-        playing_handicap = calculate_playing_handicap(player_handicap_index, tee_slope)
+
+        # Use calculated_hdj from OCR if available (calculated from Stableford points)
+        # Otherwise calculate from current handicap_index
+        calculated_hdj = round_info.get("calculated_hdj", 0)
+        if calculated_hdj > 0:
+            playing_handicap = calculated_hdj
+        else:
+            playing_handicap = calculate_playing_handicap(player_handicap_index, tee_slope)
 
         # Build scores from holes_data
         scores = {}
@@ -458,7 +465,7 @@ async def save_imported_round(
             if hole_num and strokes:
                 scores[str(hole_num)] = {
                     "strokes": strokes,
-                    "putts": 0,  # Not available from import
+                    "putts": hole.get("putts", 0),  # Include putts from OCR extraction
                 }
                 completed_holes.append(hole_num)
 

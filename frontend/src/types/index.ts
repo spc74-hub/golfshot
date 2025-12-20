@@ -237,6 +237,7 @@ export interface ImportedHoleData {
   handicap: number;
   strokes: number;
   distance: number;
+  putts?: number;
 }
 
 export interface ImportedRoundData {
@@ -253,6 +254,7 @@ export interface ImportedRoundData {
     date: string;
     player_name: string;
     handicap_index: number;
+    calculated_hdj?: number;
   };
   holes: number;
   course_length: CourseLength; // "18", "front9", or "back9"
@@ -261,6 +263,7 @@ export interface ImportedRoundData {
     strokes: number;
     par: number;
     stableford_points: number;
+    putts?: number;
   };
 }
 
