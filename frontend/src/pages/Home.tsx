@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, History, Play, Flag, Users, BarChart3 } from "lucide-react";
+import { Plus, History, Play, Flag, Users, BarChart3, MapPin } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -49,7 +49,7 @@ export function Home() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Link to="/round/setup">
           <Card className="hover:bg-accent transition-colors cursor-pointer">
             <CardHeader className="flex flex-row items-center space-x-4 pb-2">
@@ -85,6 +85,19 @@ export function Home() {
               <div>
                 <CardTitle className="text-lg">Estadisticas</CardTitle>
                 <CardDescription>Analiza tu rendimiento</CardDescription>
+              </div>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link to="/courses">
+          <Card className="hover:bg-accent transition-colors cursor-pointer">
+            <CardHeader className="flex flex-row items-center space-x-4 pb-2">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <MapPin className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Campos</CardTitle>
+                <CardDescription>Gestiona tus campos de golf</CardDescription>
               </div>
             </CardHeader>
           </Card>
