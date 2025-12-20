@@ -455,8 +455,8 @@ async def save_imported_round(
             "scores": scores,
         }
 
-        # Determine course length
-        course_length = "18" if num_holes == 18 else "front9"
+        # Use course_length from import data, or determine from num_holes
+        course_length = import_data.get("course_length", "18" if num_holes == 18 else "front9")
 
         # Create the imported round
         # NOTE: is_imported field requires adding column to Supabase:

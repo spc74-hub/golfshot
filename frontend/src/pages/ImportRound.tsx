@@ -13,6 +13,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -21,7 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Upload, ImageIcon, Check, X, ArrowLeft, Loader2, Clipboard } from "lucide-react";
-import type { ImportedRoundData } from "@/types";
+import type { ImportedRoundData, CourseLength } from "@/types";
 
 export function ImportRound() {
   const navigate = useNavigate();
@@ -98,7 +105,12 @@ export function ImportRound() {
 
     try {
       const result = await roundsApi.extractFromImage(selectedFile);
-      setExtractedData(result.round_data);
+      const roundData = result.round_data;
+      // Set default course_length based on number of holes
+      if (!roundData.course_length) {
+        roundData.course_length = roundData.holes === 18 ? "18" : "front9";
+      }
+      setExtractedData(roundData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al extraer datos de la imagen");
     } finally {
@@ -321,7 +333,7 @@ export function ImportRound() {
               {/* Round Info */}
               <div className="space-y-4">
                 <h3 className="font-semibold">Ronda</h3>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label>Fecha</Label>
                     <Input
@@ -345,6 +357,39 @@ export function ImportRound() {
                       value={extractedData.round.handicap_index}
                       onChange={(e) => updateExtractedData("round.handicap_index", parseFloat(e.target.value))}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Recorrido</Label>
+                    <Select
+                      value={extractedData.course_length}
+                      onValueChange={(value: CourseLength) => {
+                        // Renumber holes based on course length selection
+                        const newHolesData = extractedData.holes_data.map((hole, idx) => {
+                          let newNumber: number;
+                          if (value === "back9") {
+                            newNumber = idx + 10; // 10-18
+                          } else {
+                            newNumber = idx + 1; // 1-9 or 1-18
+                          }
+                          return { ...hole, number: newNumber };
+                        });
+                        setExtractedData({
+                          ...extractedData,
+                          course_length: value,
+                          holes: value === "18" ? 18 : 9,
+                          holes_data: newHolesData,
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="18">18 hoyos</SelectItem>
+                        <SelectItem value="front9">9 primeros (1-9)</SelectItem>
+                        <SelectItem value="back9">9 ultimos (10-18)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </div>

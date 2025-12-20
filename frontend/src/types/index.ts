@@ -253,6 +253,7 @@ export interface ImportedRoundData {
     handicap_index: number;
   };
   holes: number;
+  course_length: CourseLength; // "18", "front9", or "back9"
   holes_data: ImportedHoleData[];
   totals: {
     strokes: number;
