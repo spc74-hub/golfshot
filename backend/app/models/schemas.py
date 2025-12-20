@@ -190,6 +190,7 @@ class SavedPlayerResponse(BaseModel):
 # User Statistics schemas
 class UserStats(BaseModel):
     total_rounds: int
+    user_handicap_index: Optional[float] = None  # User's official handicap index
     avg_strokes_par3: Optional[float] = None
     avg_strokes_par4: Optional[float] = None
     avg_strokes_par5: Optional[float] = None
@@ -199,7 +200,11 @@ class UserStats(BaseModel):
     avg_strokes_9holes: Optional[float] = None
     avg_strokes_18holes: Optional[float] = None
     avg_stableford_points: Optional[float] = None  # Normalized to 18-hole equivalent
-    virtual_handicap: Optional[float] = None  # Based on 18-hole rounds only
+    # HVP - Handicap Virtual Promedio (average Stableford points, 9-hole mirrored)
+    hvp_total: Optional[float] = None  # All-time average
+    hvp_month: Optional[float] = None  # Current month average
+    hvp_quarter: Optional[float] = None  # Current quarter average
+    hvp_year: Optional[float] = None  # Current year average
     # Best round for 18 holes
     best_round_score: Optional[int] = None
     best_round_date: Optional[str] = None

@@ -9,12 +9,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   TrendingUp,
-  Target,
   Award,
   BarChart3,
   Flag,
   Calendar,
   MapPin,
+  User,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
@@ -28,6 +28,59 @@ function formatDate(dateStr: string | null): string {
   } catch {
     return dateStr;
   }
+}
+
+// Helper to format deviation from target
+// For strokes/putts: lower is better (negative deviation = green)
+// For stableford points: higher is better (positive deviation = green)
+function formatDeviation(
+  value: number | null,
+  target: number,
+  higherIsBetter: boolean = false
+): React.ReactNode {
+  if (value === null) return null;
+
+  const diff = value - target;
+  if (diff === 0) return null;
+
+  const isPositive = diff > 0;
+  const isGood = higherIsBetter ? isPositive : !isPositive;
+  const sign = isPositive ? "+" : "";
+  const colorClass = isGood ? "text-green-600" : "text-red-500";
+
+  return (
+    <span className={`text-sm font-normal ${colorClass}`}>
+      ({sign}{diff.toFixed(1)})
+    </span>
+  );
+}
+
+// Helper to format HVP deviation compared to user's real handicap
+// HVP is already expressed as "virtual handicap" (like 15.2)
+// User handicap is their official index (like 14.2)
+// Deviation = HVP - userHandicap
+// Negative means playing BETTER than handicap (green) - lower HVP is better
+// Positive means playing WORSE than handicap (red) - higher HVP is worse
+function formatHvpVsHandicap(
+  hvp: number | null,
+  userHandicap: number | null
+): React.ReactNode {
+  if (hvp === null || userHandicap === null) return null;
+
+  const diff = hvp - userHandicap;
+
+  if (Math.abs(diff) < 0.1) return null; // Essentially equal
+
+  const sign = diff > 0 ? "+" : "";
+  // If diff is positive, HVP > handicap = playing worse (red)
+  // If diff is negative, HVP < handicap = playing better (green)
+  const colorClass = diff < 0 ? "text-green-600" : "text-red-500";
+
+  return (
+    <span className={`text-sm font-normal ${colorClass}`}>
+      ({sign}{diff.toFixed(1)})
+    </span>
+  );
 }
 
 export function Stats() {
@@ -99,48 +152,46 @@ export function Stats() {
           </CardContent>
         </Card>
 
-        {/* Virtual Handicap */}
+        {/* User Handicap */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Handicap Virtual
+              Mi Handicap
+            </CardTitle>
+            <User className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {stats.userHandicapIndex !== null ? (
+                stats.userHandicapIndex.toFixed(1)
+              ) : (
+                <span className="text-muted-foreground text-base">N/A</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Handicap Index oficial
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* HVP Total */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              HVP Total
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {stats.virtualHandicap !== null ? (
-                <>{stats.virtualHandicap.toFixed(1)}</>
+              {stats.hvpTotal !== null ? (
+                <>{stats.hvpTotal.toFixed(1)} {formatHvpVsHandicap(stats.hvpTotal, stats.userHandicapIndex)}</>
               ) : (
                 <span className="text-muted-foreground text-base">N/A</span>
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              {stats.virtualHandicap !== null
-                ? "Basado en mejores 8 de 20"
-                : "Necesitas al menos 3 rondas de 18 hoyos"}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Average Stableford */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Promedio Stableford
-            </CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {stats.avgStablefordPoints !== null ? (
-                <>{stats.avgStablefordPoints.toFixed(1)}</>
-              ) : (
-                <span className="text-muted-foreground text-base">N/A</span>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Puntos equivalentes a 18 hoyos
+              Handicap Virtual Promedio
             </p>
           </CardContent>
         </Card>
@@ -162,11 +213,64 @@ export function Stats() {
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Golpes totales
+              Golpes totales (18 hoyos)
             </p>
           </CardContent>
         </Card>
       </div>
+
+      {/* HVP by Period */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            HVP por Periodo
+          </CardTitle>
+          <CardDescription>
+            Handicap Virtual Promedio - Comparado con tu handicap oficial ({stats.userHandicapIndex?.toFixed(1) ?? "N/A"})
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Total */}
+            <div className="text-center p-3 bg-muted/50 rounded-lg">
+              <div className="text-2xl font-bold">
+                {stats.hvpTotal !== null ? (
+                  <>{stats.hvpTotal.toFixed(1)} {formatHvpVsHandicap(stats.hvpTotal, stats.userHandicapIndex)}</>
+                ) : "N/A"}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Total</p>
+            </div>
+            {/* Year */}
+            <div className="text-center p-3 bg-muted/50 rounded-lg">
+              <div className="text-2xl font-bold">
+                {stats.hvpYear !== null ? (
+                  <>{stats.hvpYear.toFixed(1)} {formatHvpVsHandicap(stats.hvpYear, stats.userHandicapIndex)}</>
+                ) : "N/A"}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Este Ano</p>
+            </div>
+            {/* Quarter */}
+            <div className="text-center p-3 bg-muted/50 rounded-lg">
+              <div className="text-2xl font-bold">
+                {stats.hvpQuarter !== null ? (
+                  <>{stats.hvpQuarter.toFixed(1)} {formatHvpVsHandicap(stats.hvpQuarter, stats.userHandicapIndex)}</>
+                ) : "N/A"}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Trimestre</p>
+            </div>
+            {/* Month */}
+            <div className="text-center p-3 bg-muted/50 rounded-lg">
+              <div className="text-2xl font-bold">
+                {stats.hvpMonth !== null ? (
+                  <>{stats.hvpMonth.toFixed(1)} {formatHvpVsHandicap(stats.hvpMonth, stats.userHandicapIndex)}</>
+                ) : "N/A"}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Este Mes</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Best Round Details - Grid for 18 and 9 holes */}
       {(stats.bestRoundScore !== null || stats.bestRound9Score !== null) && (
@@ -283,9 +387,9 @@ export function Stats() {
                   </div>
                 </div>
               </div>
-              <div className="text-2xl font-bold min-w-[4rem] text-right">
+              <div className="text-2xl font-bold min-w-[6rem] text-right">
                 {stats.avgStrokesPar3 !== null ? (
-                  stats.avgStrokesPar3.toFixed(2)
+                  <>{stats.avgStrokesPar3.toFixed(2)} {formatDeviation(stats.avgStrokesPar3, 3)}</>
                 ) : (
                   <span className="text-muted-foreground text-base">N/A</span>
                 )}
@@ -312,9 +416,9 @@ export function Stats() {
                   </div>
                 </div>
               </div>
-              <div className="text-2xl font-bold min-w-[4rem] text-right">
+              <div className="text-2xl font-bold min-w-[6rem] text-right">
                 {stats.avgStrokesPar4 !== null ? (
-                  stats.avgStrokesPar4.toFixed(2)
+                  <>{stats.avgStrokesPar4.toFixed(2)} {formatDeviation(stats.avgStrokesPar4, 4)}</>
                 ) : (
                   <span className="text-muted-foreground text-base">N/A</span>
                 )}
@@ -341,9 +445,9 @@ export function Stats() {
                   </div>
                 </div>
               </div>
-              <div className="text-2xl font-bold min-w-[4rem] text-right">
+              <div className="text-2xl font-bold min-w-[6rem] text-right">
                 {stats.avgStrokesPar5 !== null ? (
-                  stats.avgStrokesPar5.toFixed(2)
+                  <>{stats.avgStrokesPar5.toFixed(2)} {formatDeviation(stats.avgStrokesPar5, 5)}</>
                 ) : (
                   <span className="text-muted-foreground text-base">N/A</span>
                 )}
@@ -364,14 +468,14 @@ export function Stats() {
           <CardContent>
             <div className="text-3xl font-bold">
               {stats.avgStrokes9holes !== null ? (
-                stats.avgStrokes9holes.toFixed(1)
+                <>{stats.avgStrokes9holes.toFixed(1)} {formatDeviation(stats.avgStrokes9holes, 36)}</>
               ) : (
                 <span className="text-muted-foreground text-xl">N/A</span>
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {stats.avgStrokes9holes !== null
-                ? "Golpes totales promedio"
+                ? "Golpes totales promedio (par 36)"
                 : "No hay rondas de 9 hoyos"}
             </p>
           </CardContent>
@@ -386,14 +490,14 @@ export function Stats() {
           <CardContent>
             <div className="text-3xl font-bold">
               {stats.avgStrokes18holes !== null ? (
-                stats.avgStrokes18holes.toFixed(1)
+                <>{stats.avgStrokes18holes.toFixed(1)} {formatDeviation(stats.avgStrokes18holes, 72)}</>
               ) : (
                 <span className="text-muted-foreground text-xl">N/A</span>
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {stats.avgStrokes18holes !== null
-                ? "Golpes totales promedio"
+                ? "Golpes totales promedio (par 72)"
                 : "No hay rondas de 18 hoyos"}
             </p>
           </CardContent>
@@ -411,14 +515,14 @@ export function Stats() {
           <CardContent>
             <div className="text-3xl font-bold">
               {stats.avgPutts9holes !== null ? (
-                stats.avgPutts9holes.toFixed(1)
+                <>{stats.avgPutts9holes.toFixed(1)} {formatDeviation(stats.avgPutts9holes, 18)}</>
               ) : (
                 <span className="text-muted-foreground text-xl">N/A</span>
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {stats.avgPutts9holes !== null
-                ? "Putts totales promedio"
+                ? "Putts totales promedio (objetivo 18)"
                 : "No hay rondas de 9 hoyos"}
             </p>
           </CardContent>
@@ -433,14 +537,14 @@ export function Stats() {
           <CardContent>
             <div className="text-3xl font-bold">
               {stats.avgPutts18holes !== null ? (
-                stats.avgPutts18holes.toFixed(1)
+                <>{stats.avgPutts18holes.toFixed(1)} {formatDeviation(stats.avgPutts18holes, 36)}</>
               ) : (
                 <span className="text-muted-foreground text-xl">N/A</span>
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {stats.avgPutts18holes !== null
-                ? "Putts totales promedio"
+                ? "Putts totales promedio (objetivo 36)"
                 : "No hay rondas de 18 hoyos"}
             </p>
           </CardContent>
@@ -457,12 +561,14 @@ export function Stats() {
                 Las estadisticas se calculan a partir de tus rondas completadas.
               </p>
               <p>
-                El <strong>handicap virtual</strong> se basa en la formula oficial: promedio de
-                los mejores 8 diferenciales de tus ultimas 20 rondas de <strong>18 hoyos</strong>.
+                El <strong>HVP</strong> (Handicap Virtual Promedio) indica el handicap al que
+                estas jugando realmente. Se calcula a partir de tus puntos Stableford.
+                Las rondas de 9 hoyos se duplican para equipararlas a 18 hoyos.
               </p>
               <p>
-                El <strong>promedio Stableford</strong> normaliza las rondas de 9 hoyos
-                duplicando los puntos para obtener un equivalente de 18 hoyos.
+                La desviacion entre parentesis compara tu HVP con tu handicap oficial.
+                <span className="text-green-600"> Verde</span> = juegas mejor que tu handicap,
+                <span className="text-red-500"> rojo</span> = juegas peor.
               </p>
             </div>
           </div>

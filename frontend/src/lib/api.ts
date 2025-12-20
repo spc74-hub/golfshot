@@ -178,6 +178,7 @@ export const usersApi = {
     // Transform snake_case to camelCase
     return {
       totalRounds: data.total_rounds,
+      userHandicapIndex: data.user_handicap_index,
       avgStrokesPar3: data.avg_strokes_par3,
       avgStrokesPar4: data.avg_strokes_par4,
       avgStrokesPar5: data.avg_strokes_par5,
@@ -187,7 +188,11 @@ export const usersApi = {
       avgStrokes9holes: data.avg_strokes_9holes,
       avgStrokes18holes: data.avg_strokes_18holes,
       avgStablefordPoints: data.avg_stableford_points,
-      virtualHandicap: data.virtual_handicap,
+      // HVP - Handicap Virtual Promedio
+      hvpTotal: data.hvp_total,
+      hvpMonth: data.hvp_month,
+      hvpQuarter: data.hvp_quarter,
+      hvpYear: data.hvp_year,
       // Best 18-hole round
       bestRoundScore: data.best_round_score,
       bestRoundDate: data.best_round_date,

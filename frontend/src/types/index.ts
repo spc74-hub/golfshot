@@ -155,6 +155,7 @@ export interface AdminStats {
 
 export interface UserStats {
   totalRounds: number;
+  userHandicapIndex: number | null;  // User's official handicap index
   avgStrokesPar3: number | null;
   avgStrokesPar4: number | null;
   avgStrokesPar5: number | null;
@@ -164,7 +165,11 @@ export interface UserStats {
   avgStrokes9holes: number | null;
   avgStrokes18holes: number | null;
   avgStablefordPoints: number | null;  // Normalized to 18-hole equivalent
-  virtualHandicap: number | null;  // Based on 18-hole rounds only
+  // HVP - Handicap Virtual Promedio (average Stableford points)
+  hvpTotal: number | null;  // All-time average
+  hvpMonth: number | null;  // Current month average
+  hvpQuarter: number | null;  // Current quarter average
+  hvpYear: number | null;  // Current year average
   // Best 18-hole round
   bestRoundScore: number | null;
   bestRoundDate: string | null;

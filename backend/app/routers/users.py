@@ -3,6 +3,7 @@ from app.models.schemas import UserResponse, UserUpdate, UserStats
 from app.services.supabase import get_supabase_client, get_supabase_admin_client
 from app.dependencies import get_current_user, get_admin_user
 from typing import Dict, Any
+from datetime import datetime, date
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -180,6 +181,19 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
     supabase = get_supabase_client()
 
     try:
+        # Get user's handicap index from saved_players (first player with matching user)
+        saved_players_response = (
+            supabase.table("saved_players")
+            .select("*")
+            .eq("user_id", current_user.id)
+            .order("created_at", desc=False)
+            .limit(1)
+            .execute()
+        )
+        user_handicap_index = None
+        if saved_players_response.data and len(saved_players_response.data) > 0:
+            user_handicap_index = saved_players_response.data[0].get("handicap_index")
+
         # Get all finished rounds for the user
         rounds_response = (
             supabase.table("rounds")
@@ -196,6 +210,7 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         if total_rounds == 0:
             return UserStats(
                 total_rounds=0,
+                user_handicap_index=user_handicap_index,
                 avg_strokes_par3=None,
                 avg_strokes_par4=None,
                 avg_strokes_par5=None,
@@ -205,7 +220,10 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 avg_strokes_9holes=None,
                 avg_strokes_18holes=None,
                 avg_stableford_points=None,
-                virtual_handicap=None,
+                hvp_total=None,
+                hvp_month=None,
+                hvp_quarter=None,
+                hvp_year=None,
                 best_round_score=None,
                 best_round_date=None,
                 best_round_course=None,
@@ -228,11 +246,19 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         strokes_9holes = []
         strokes_18holes = []
         stableford_points_normalized = []  # Normalized to 18-hole equivalent
-        score_differentials = []  # For handicap calculation (18-hole only)
+        # HVP data: list of (normalized_points, round_date) tuples
+        hvp_data = []
         best_score_18 = None
         best_score_18_info = None
         best_score_9 = None
         best_score_9_info = None
+
+        # Get current date info for period filtering
+        today = date.today()
+        current_month_start = date(today.year, today.month, 1)
+        current_quarter = (today.month - 1) // 3
+        current_quarter_start = date(today.year, current_quarter * 3 + 1, 1)
+        current_year_start = date(today.year, 1, 1)
 
         for round_data in rounds:
             course = courses.get(round_data.get("course_id"))
@@ -353,18 +379,25 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 total_putts.append(round_putts)
 
             # Track Stableford points - normalize to 18-hole equivalent
-            if round_data.get("game_mode") == "stableford" and round_stableford > 0:
+            # For HVP, we track ALL rounds (not just stableford mode) and normalize 9-hole
+            if round_stableford > 0:
                 if is_9_hole_round:
                     # Double the points to get 18-hole equivalent
-                    stableford_points_normalized.append(round_stableford * 2)
+                    normalized_points = round_stableford * 2
                 else:
-                    stableford_points_normalized.append(round_stableford)
+                    normalized_points = round_stableford
 
-            # Calculate score differential for handicap (only for 18-hole rounds)
-            if course_length == "18" and round_strokes > 0:
-                # Differential = (Score - Course Rating) * 113 / Slope
-                differential = (round_strokes - course_rating) * 113 / slope
-                score_differentials.append(differential)
+                # For avg_stableford_points (only stableford mode)
+                if round_data.get("game_mode") == "stableford":
+                    stableford_points_normalized.append(normalized_points)
+
+                # For HVP - all rounds with stableford points calculated
+                round_date_str = round_data.get("round_date", "")
+                try:
+                    round_date_parsed = datetime.strptime(round_date_str, "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    round_date_parsed = None
+                hvp_data.append((normalized_points, round_date_parsed))
 
         # Calculate averages
         avg_par3 = sum(par3_strokes) / len(par3_strokes) if par3_strokes else None
@@ -378,22 +411,38 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         # Stableford average using normalized 18-hole equivalent points
         avg_stableford = sum(stableford_points_normalized) / len(stableford_points_normalized) if stableford_points_normalized else None
 
-        # Calculate virtual handicap (best 8 of last 20 differentials)
-        virtual_hcp = None
-        if score_differentials:
-            # Take last 20 rounds
-            recent_diffs = score_differentials[:20]
-            # Sort and take best 8
-            if len(recent_diffs) >= 8:
-                best_8 = sorted(recent_diffs)[:8]
-                virtual_hcp = sum(best_8) / 8
-            elif len(recent_diffs) >= 3:
-                # If less than 8 but at least 3, use best 3
-                best_n = sorted(recent_diffs)[:min(3, len(recent_diffs))]
-                virtual_hcp = sum(best_n) / len(best_n)
+        # Calculate HVP (Handicap Virtual Promedio) for different periods
+        # HVP = 36 - average Stableford points (normalized to 18 holes)
+        # 36 points = handicap 0 (scratch), 30 points = handicap 6, etc.
+        hvp_total = None
+        hvp_month = None
+        hvp_quarter = None
+        hvp_year = None
+
+        if hvp_data:
+            # Total (all-time)
+            all_points = [p for p, _ in hvp_data]
+            avg_points_total = sum(all_points) / len(all_points)
+            hvp_total = 36 - avg_points_total
+
+            # Filter by periods
+            month_points = [p for p, d in hvp_data if d and d >= current_month_start]
+            quarter_points = [p for p, d in hvp_data if d and d >= current_quarter_start]
+            year_points = [p for p, d in hvp_data if d and d >= current_year_start]
+
+            if month_points:
+                avg_month = sum(month_points) / len(month_points)
+                hvp_month = 36 - avg_month
+            if quarter_points:
+                avg_quarter = sum(quarter_points) / len(quarter_points)
+                hvp_quarter = 36 - avg_quarter
+            if year_points:
+                avg_year = sum(year_points) / len(year_points)
+                hvp_year = 36 - avg_year
 
         return UserStats(
             total_rounds=total_rounds,
+            user_handicap_index=user_handicap_index,
             avg_strokes_par3=round(avg_par3, 2) if avg_par3 else None,
             avg_strokes_par4=round(avg_par4, 2) if avg_par4 else None,
             avg_strokes_par5=round(avg_par5, 2) if avg_par5 else None,
@@ -403,7 +452,11 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
             avg_strokes_9holes=round(avg_9holes, 2) if avg_9holes else None,
             avg_strokes_18holes=round(avg_18holes, 2) if avg_18holes else None,
             avg_stableford_points=round(avg_stableford, 2) if avg_stableford else None,
-            virtual_handicap=round(virtual_hcp, 1) if virtual_hcp else None,
+            # HVP - Handicap Virtual Promedio
+            hvp_total=round(hvp_total, 1) if hvp_total else None,
+            hvp_month=round(hvp_month, 1) if hvp_month else None,
+            hvp_quarter=round(hvp_quarter, 1) if hvp_quarter else None,
+            hvp_year=round(hvp_year, 1) if hvp_year else None,
             # Best 18-hole round
             best_round_score=best_score_18_info["score"] if best_score_18_info else None,
             best_round_date=best_score_18_info["date"] if best_score_18_info else None,
