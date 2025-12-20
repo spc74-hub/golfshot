@@ -11,6 +11,7 @@ import {
   calculateMatchPlayScore,
   formatMatchPlayScore,
   getMatchPlayHolesRemaining,
+  calculatePlayingHandicap,
 } from "@/lib/calculations";
 import {
   Card,
@@ -215,15 +216,28 @@ export function RoundPlay() {
     }
   };
 
+  // Helper to recalculate HDJ if stored as 0 (legacy rounds)
+  const recalculateHDJ = useCallback((player: Player): number => {
+    if (!course || player.playingHandicap !== 0) return player.playingHandicap;
+    // Find the tee slope for this player
+    const tee = course.tees?.find((t: { name: string; slope: number }) => t.name === player.teeBox);
+    if (!tee) return player.playingHandicap;
+    // Recalculate using the stored handicap index and tee slope
+    return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, round?.handicapPercentage || 100);
+  }, [course, round?.handicapPercentage]);
+
   // Get the effective handicap for a player (when useHandicap is false, all use first player's handicap)
   const getEffectiveHandicap = useCallback((player: Player): number => {
     if (!round) return player.playingHandicap;
     // When useHandicap is false, everyone uses the first player's handicap
     if (!round.useHandicap) {
-      return round.players[0]?.playingHandicap || 0;
+      const firstPlayer = round.players[0];
+      if (!firstPlayer) return 0;
+      // Recalculate if stored as 0 (legacy rounds created before fix)
+      return recalculateHDJ(firstPlayer);
     }
-    return player.playingHandicap;
-  }, [round]);
+    return recalculateHDJ(player);
+  }, [round, recalculateHDJ]);
 
   // Calculate total points for a player (only completed holes)
   const getTotalPoints = useCallback((player: Player): number => {
