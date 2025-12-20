@@ -176,6 +176,39 @@ export function RoundCard() {
     return calculateStrokesReceived(effectiveHcp, holeData.handicap) > 0;
   };
 
+  // Check if GIR (Green in Regulation) was achieved
+  // GIR = reaching the green in (par - 2) strokes or less
+  // Par 3: 1 stroke to green, Par 4: 2 strokes to green, Par 5: 3 strokes to green
+  const isGIR = (player: Player, holeNum: number): boolean | null => {
+    if (!course) return null;
+    const score = player.scores[holeNum];
+    if (!score || score.putts === undefined) return null;
+
+    const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
+    if (!holeData) return null;
+
+    const strokesToGreen = score.strokes - score.putts;
+    const targetStrokes = holeData.par - 2;
+
+    return strokesToGreen <= targetStrokes;
+  };
+
+  // Calculate GIR count for a set of holes
+  const getGIRCount = (player: Player, holeNumbers: number[]): { hit: number; total: number } => {
+    let hit = 0;
+    let total = 0;
+
+    holeNumbers.forEach(holeNum => {
+      const gir = isGIR(player, holeNum);
+      if (gir !== null) {
+        total++;
+        if (gir) hit++;
+      }
+    });
+
+    return { hit, total };
+  };
+
   if (roundLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -480,6 +513,32 @@ export function RoundCard() {
                             {front9Totals.putts || "-"}
                           </td>
                         </tr>
+                        {/* GIR row */}
+                        <tr className="border-b">
+                          <td className="p-1 font-medium">GIR</td>
+                          {front9.map(h => {
+                            const gir = isGIR(player, h);
+                            const isCompleted = round.completedHoles?.includes(h);
+                            return (
+                              <td
+                                key={h}
+                                className={`p-1 text-center ${
+                                  !isCompleted ? "text-muted-foreground/50" :
+                                  gir === true ? "text-green-600" :
+                                  gir === false ? "text-red-500" : ""
+                                }`}
+                              >
+                                {gir === null ? "-" : gir ? "●" : "○"}
+                              </td>
+                            );
+                          })}
+                          <td className="p-1 text-center bg-muted/50 text-xs">
+                            {(() => {
+                              const girStats = getGIRCount(player, front9);
+                              return girStats.total > 0 ? `${girStats.hit}/${girStats.total}` : "-";
+                            })()}
+                          </td>
+                        </tr>
                         {/* Points row */}
                         {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
                           <tr className="border-b bg-primary/5">
@@ -599,6 +658,38 @@ export function RoundCard() {
                             {totalTotals.putts || "-"}
                           </td>
                         </tr>
+                        {/* GIR row */}
+                        <tr className="border-b">
+                          <td className="p-1 font-medium">GIR</td>
+                          {back9.map(h => {
+                            const gir = isGIR(player, h);
+                            const isCompleted = round.completedHoles?.includes(h);
+                            return (
+                              <td
+                                key={h}
+                                className={`p-1 text-center ${
+                                  !isCompleted ? "text-muted-foreground/50" :
+                                  gir === true ? "text-green-600" :
+                                  gir === false ? "text-red-500" : ""
+                                }`}
+                              >
+                                {gir === null ? "-" : gir ? "●" : "○"}
+                              </td>
+                            );
+                          })}
+                          <td className="p-1 text-center bg-muted/50 text-xs">
+                            {(() => {
+                              const girStats = getGIRCount(player, back9);
+                              return girStats.total > 0 ? `${girStats.hit}/${girStats.total}` : "-";
+                            })()}
+                          </td>
+                          <td className="p-1 text-center bg-primary/10 text-xs">
+                            {(() => {
+                              const girStats = getGIRCount(player, holes);
+                              return girStats.total > 0 ? `${girStats.hit}/${girStats.total}` : "-";
+                            })()}
+                          </td>
+                        </tr>
                         {/* Points row */}
                         {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
                           <tr className="border-b bg-primary/5">
@@ -645,7 +736,7 @@ export function RoundCard() {
               </div>
 
               {/* Summary */}
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="mt-4 grid grid-cols-4 gap-2 text-center">
                 <div className="p-2 bg-muted rounded">
                   <div className="text-lg font-bold">
                     {totalTotals.strokes}{" "}
@@ -663,6 +754,23 @@ export function RoundCard() {
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">Putts</div>
+                </div>
+                <div className="p-2 bg-muted rounded">
+                  {(() => {
+                    const girStats = getGIRCount(player, holes);
+                    const girPercent = girStats.total > 0 ? Math.round((girStats.hit / girStats.total) * 100) : 0;
+                    return (
+                      <>
+                        <div className="text-lg font-bold">
+                          {girStats.hit}/{girStats.total}{" "}
+                          <span className={`text-sm ${girPercent >= 50 ? "text-green-600" : "text-red-500"}`}>
+                            ({girPercent}%)
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">GIR</div>
+                      </>
+                    );
+                  })()}
                 </div>
                 {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
                   <div className="p-2 bg-primary/10 rounded">
