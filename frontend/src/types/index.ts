@@ -157,6 +157,8 @@ export interface UserStats {
   avgStrokesPar4: number | null;
   avgStrokesPar5: number | null;
   avgPuttsPerRound: number | null;
+  avgPutts9holes: number | null;
+  avgPutts18holes: number | null;
   avgStrokes9holes: number | null;
   avgStrokes18holes: number | null;
   avgStablefordPoints: number | null;

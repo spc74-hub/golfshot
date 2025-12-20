@@ -181,6 +181,8 @@ export const usersApi = {
       avgStrokesPar4: data.avg_strokes_par4,
       avgStrokesPar5: data.avg_strokes_par5,
       avgPuttsPerRound: data.avg_putts_per_round,
+      avgPutts9holes: data.avg_putts_9holes,
+      avgPutts18holes: data.avg_putts_18holes,
       avgStrokes9holes: data.avg_strokes_9holes,
       avgStrokes18holes: data.avg_strokes_18holes,
       avgStablefordPoints: data.avg_stableford_points,

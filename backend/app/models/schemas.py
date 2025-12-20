@@ -191,6 +191,8 @@ class UserStats(BaseModel):
     avg_strokes_par4: Optional[float] = None
     avg_strokes_par5: Optional[float] = None
     avg_putts_per_round: Optional[float] = None
+    avg_putts_9holes: Optional[float] = None
+    avg_putts_18holes: Optional[float] = None
     avg_strokes_9holes: Optional[float] = None
     avg_strokes_18holes: Optional[float] = None
     avg_stableford_points: Optional[float] = None

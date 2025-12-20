@@ -200,6 +200,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 avg_strokes_par4=None,
                 avg_strokes_par5=None,
                 avg_putts_per_round=None,
+                avg_putts_9holes=None,
+                avg_putts_18holes=None,
                 avg_strokes_9holes=None,
                 avg_strokes_18holes=None,
                 avg_stableford_points=None,
@@ -218,6 +220,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         par4_strokes = []
         par5_strokes = []
         total_putts = []
+        putts_9holes = []
+        putts_18holes = []
         strokes_9holes = []
         strokes_18holes = []
         stableford_points = []
@@ -316,8 +320,12 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
             # Track round totals
             if course_length in ["front9", "back9"]:
                 strokes_9holes.append(round_strokes)
+                if round_putts > 0:
+                    putts_9holes.append(round_putts)
             else:
                 strokes_18holes.append(round_strokes)
+                if round_putts > 0:
+                    putts_18holes.append(round_putts)
 
             if round_putts > 0:
                 total_putts.append(round_putts)
@@ -345,6 +353,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         avg_par4 = sum(par4_strokes) / len(par4_strokes) if par4_strokes else None
         avg_par5 = sum(par5_strokes) / len(par5_strokes) if par5_strokes else None
         avg_putts = sum(total_putts) / len(total_putts) if total_putts else None
+        avg_putts_9 = sum(putts_9holes) / len(putts_9holes) if putts_9holes else None
+        avg_putts_18 = sum(putts_18holes) / len(putts_18holes) if putts_18holes else None
         avg_9holes = sum(strokes_9holes) / len(strokes_9holes) if strokes_9holes else None
         avg_18holes = sum(strokes_18holes) / len(strokes_18holes) if strokes_18holes else None
         avg_stableford = sum(stableford_points) / len(stableford_points) if stableford_points else None
@@ -369,6 +379,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
             avg_strokes_par4=round(avg_par4, 2) if avg_par4 else None,
             avg_strokes_par5=round(avg_par5, 2) if avg_par5 else None,
             avg_putts_per_round=round(avg_putts, 2) if avg_putts else None,
+            avg_putts_9holes=round(avg_putts_9, 2) if avg_putts_9 else None,
+            avg_putts_18holes=round(avg_putts_18, 2) if avg_putts_18 else None,
             avg_strokes_9holes=round(avg_9holes, 2) if avg_9holes else None,
             avg_strokes_18holes=round(avg_18holes, 2) if avg_18holes else None,
             avg_stableford_points=round(avg_stableford, 2) if avg_stableford else None,

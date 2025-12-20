@@ -349,29 +349,52 @@ export function Stats() {
         </Card>
       </div>
 
-      {/* Putting Average */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Promedio de Putts</CardTitle>
-          <CardDescription>
-            Putts promedio por ronda
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-3xl font-bold">
-            {stats.avgPuttsPerRound !== null ? (
-              stats.avgPuttsPerRound.toFixed(1)
-            ) : (
-              <span className="text-muted-foreground text-xl">N/A</span>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {stats.avgPuttsPerRound !== null
-              ? "Putts totales por ronda"
-              : "No hay datos de putts disponibles"}
-          </p>
-        </CardContent>
-      </Card>
+      {/* Putting Averages by Round Length */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* 9 Holes Putts */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Putts en 9 Hoyos</CardTitle>
+            <CardDescription>Promedio por ronda</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {stats.avgPutts9holes !== null ? (
+                stats.avgPutts9holes.toFixed(1)
+              ) : (
+                <span className="text-muted-foreground text-xl">N/A</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.avgPutts9holes !== null
+                ? "Putts totales promedio"
+                : "No hay rondas de 9 hoyos"}
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* 18 Holes Putts */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Putts en 18 Hoyos</CardTitle>
+            <CardDescription>Promedio por ronda</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {stats.avgPutts18holes !== null ? (
+                stats.avgPutts18holes.toFixed(1)
+              ) : (
+                <span className="text-muted-foreground text-xl">N/A</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.avgPutts18holes !== null
+                ? "Putts totales promedio"
+                : "No hay rondas de 18 hoyos"}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Info Card */}
       <Card className="border-muted">

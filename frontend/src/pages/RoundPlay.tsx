@@ -5,6 +5,7 @@ import { useCourse } from "@/hooks/useCourses";
 import {
   calculateStablefordPoints,
   calculateSindicatoPoints,
+  calculateStrokesReceived,
   getScoreResultVsPar,
   getHolesForCourseLength,
   calculateMatchPlayScore,
@@ -541,17 +542,33 @@ export function RoundPlay() {
           round.completedHoles || [],
           course.holesData
         );
+        const player1Result = formatMatchPlayScore(matchScore, 0);
+        const player2Result = formatMatchPlayScore(matchScore, 1);
+        const player1Color = player1Result.includes("UP") ? "text-blue-500" : player1Result.includes("DN") ? "text-red-500" : "text-primary";
+        const player2Color = player2Result.includes("UP") ? "text-blue-500" : player2Result.includes("DN") ? "text-red-500" : "text-primary";
+
+        // Calculate points diff vs objective (2 pts per hole)
+        const holesCompleted = (round.completedHoles || []).length;
+        const expectedPoints = holesCompleted * 2;
+        const player1Points = getStablefordPoints(round.players[0]);
+        const player2Points = getStablefordPoints(round.players[1]);
+        const player1PointsDiff = player1Points - expectedPoints;
+        const player2PointsDiff = player2Points - expectedPoints;
+
         return (
           <Card className="bg-primary/5 border-primary/20">
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div className="text-center flex-1">
                   <div className="font-semibold">{round.players[0].name}</div>
-                  <div className="text-2xl font-bold text-primary">
-                    {formatMatchPlayScore(matchScore, 0)}
+                  <div className={`text-2xl font-bold ${player1Color}`}>
+                    {player1Result}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {getStablefordPoints(round.players[0])} pts Stableford
+                    {player1Points} pts{" "}
+                    <span className={player1PointsDiff < 0 ? "text-red-500" : ""}>
+                      ({player1PointsDiff >= 0 ? "+" : ""}{player1PointsDiff})
+                    </span>
                   </div>
                 </div>
                 <div className="text-center px-4">
@@ -562,11 +579,14 @@ export function RoundPlay() {
                 </div>
                 <div className="text-center flex-1">
                   <div className="font-semibold">{round.players[1].name}</div>
-                  <div className="text-2xl font-bold text-primary">
-                    {formatMatchPlayScore(matchScore, 1)}
+                  <div className={`text-2xl font-bold ${player2Color}`}>
+                    {player2Result}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {getStablefordPoints(round.players[1])} pts Stableford
+                    {player2Points} pts{" "}
+                    <span className={player2PointsDiff < 0 ? "text-red-500" : ""}>
+                      ({player2PointsDiff >= 0 ? "+" : ""}{player2PointsDiff})
+                    </span>
                   </div>
                 </div>
               </div>
@@ -576,34 +596,50 @@ export function RoundPlay() {
       })()}
 
       {/* Player Scores */}
-      {round.players.map((player: Player) => (
+      {round.players.map((player: Player) => {
+        const effectiveHcp = getEffectiveHandicap(player);
+        const hasStrokeOnCurrentHole = currentHoleData
+          ? calculateStrokesReceived(effectiveHcp, currentHoleData.handicap) > 0
+          : false;
+        const holesCompleted = (round.completedHoles || []).length;
+        const expectedPoints = holesCompleted * 2;
+        const playerPoints = getStablefordPoints(player);
+        const pointsDiff = playerPoints - expectedPoints;
+
+        return (
         <Card key={player.id}>
           <CardContent className="pt-4">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <div className="font-semibold">{player.name}</div>
+                <div className="font-semibold">
+                  {player.name}
+                  {hasStrokeOnCurrentHole && <span className="text-primary ml-1">*</span>}
+                </div>
                 <div className="text-xs text-muted-foreground">
-                  HDJ: {getEffectiveHandicap(player)}{!round.useHandicap && " (común)"}
+                  HDJ: {effectiveHcp}{!round.useHandicap && " (común)"}
                 </div>
               </div>
               <div className="text-right">
                 {round.gameMode === "matchplay" ? (
                   <>
                     <Badge variant="outline" className="text-lg">
-                      {getStablefordPoints(player)} pts
+                      {playerPoints} pts{" "}
+                      <span className={`text-xs ${pointsDiff < 0 ? "text-red-500" : "text-green-600"}`}>
+                        ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
+                      </span>
                     </Badge>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Stableford
-                    </div>
                   </>
                 ) : (
                   <>
                     <Badge variant="outline" className="text-lg">
-                      {getTotalPoints(player)} pts
+                      {getTotalPoints(player)} pts{" "}
+                      <span className={`text-xs ${pointsDiff < 0 ? "text-red-500" : "text-green-600"}`}>
+                        ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
+                      </span>
                     </Badge>
                     {round.gameMode === "sindicato" && (
                       <div className="text-xs text-muted-foreground mt-1">
-                        Stableford: {getStablefordPoints(player)}
+                        Stableford: {playerPoints}
                       </div>
                     )}
                   </>
@@ -614,7 +650,7 @@ export function RoundPlay() {
             <div className="grid grid-cols-3 gap-3">
               {/* Strokes */}
               <div className="space-y-1">
-                <Label className="text-xs">Golpes</Label>
+                <Label className="text-xs">Golpes{hasStrokeOnCurrentHole && " *"}</Label>
                 <div className="flex items-center gap-1">
                   <Button
                     variant="outline"
@@ -698,7 +734,8 @@ export function RoundPlay() {
             </div>
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
 
       {/* Navigation */}
       <div className="fixed bottom-16 md:bottom-0 left-0 right-0 bg-background border-t p-4 z-40">

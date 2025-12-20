@@ -5,6 +5,7 @@ import { useCourse } from "@/hooks/useCourses";
 import {
   calculateStablefordPoints,
   calculateSindicatoPoints,
+  calculateStrokesReceived,
   getHolesForCourseLength,
   getScoreResultVsPar,
   calculateMatchPlayScore,
@@ -148,6 +149,15 @@ export function RoundCard() {
     return SCORE_COLORS[result] || "";
   };
 
+  // Check if player receives stroke(s) on a hole
+  const hasStrokeOnHole = (player: Player, holeNum: number): boolean => {
+    if (!course) return false;
+    const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
+    if (!holeData) return false;
+    const effectiveHcp = getEffectiveHandicap(player);
+    return calculateStrokesReceived(effectiveHcp, holeData.handicap) > 0;
+  };
+
   if (roundLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -240,18 +250,34 @@ export function RoundCard() {
                 return sum + calculateStablefordPoints(score.strokes, holeData.par, player2EffectiveHcp, holeData.handicap);
               }, 0);
 
+              // Determine colors: UP = blue, DN = red, AS = neutral
+              const player1Result = round.isFinished
+                ? formatMatchPlayFinalResult(matchScore, holesRemaining, 0)
+                : formatMatchPlayScore(matchScore, 0);
+              const player2Result = round.isFinished
+                ? formatMatchPlayFinalResult(matchScore, holesRemaining, 1)
+                : formatMatchPlayScore(matchScore, 1);
+              const player1Color = player1Result.includes("UP") ? "text-blue-500" : player1Result.includes("DN") ? "text-red-500" : "text-primary";
+              const player2Color = player2Result.includes("UP") ? "text-blue-500" : player2Result.includes("DN") ? "text-red-500" : "text-primary";
+
+              // Calculate points diff vs objective (2 pts per hole)
+              const holesCompleted = (round.completedHoles || []).length;
+              const expectedPoints = holesCompleted * 2;
+              const player1PointsDiff = player1Stableford - expectedPoints;
+              const player2PointsDiff = player2Stableford - expectedPoints;
+
               return (
                 <div className="flex items-center justify-between">
                   <div className="text-center flex-1">
                     <div className="font-semibold">{round.players[0].name}</div>
-                    <div className="text-3xl font-bold text-primary">
-                      {round.isFinished
-                        ? formatMatchPlayFinalResult(matchScore, holesRemaining, 0)
-                        : formatMatchPlayScore(matchScore, 0)
-                      }
+                    <div className={`text-3xl font-bold ${player1Color}`}>
+                      {player1Result}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {player1Stableford} pts Stableford
+                      {player1Stableford} pts{" "}
+                      <span className={player1PointsDiff < 0 ? "text-red-500" : ""}>
+                        ({player1PointsDiff >= 0 ? "+" : ""}{player1PointsDiff})
+                      </span>
                     </div>
                   </div>
                   <div className="text-center px-4">
@@ -264,14 +290,14 @@ export function RoundCard() {
                   </div>
                   <div className="text-center flex-1">
                     <div className="font-semibold">{round.players[1].name}</div>
-                    <div className="text-3xl font-bold text-primary">
-                      {round.isFinished
-                        ? formatMatchPlayFinalResult(matchScore, holesRemaining, 1)
-                        : formatMatchPlayScore(matchScore, 1)
-                      }
+                    <div className={`text-3xl font-bold ${player2Color}`}>
+                      {player2Result}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {player2Stableford} pts Stableford
+                      {player2Stableford} pts{" "}
+                      <span className={player2PointsDiff < 0 ? "text-red-500" : ""}>
+                        ({player2PointsDiff >= 0 ? "+" : ""}{player2PointsDiff})
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -293,6 +319,12 @@ export function RoundCard() {
           holesPlayed: front9Totals.holesPlayed + back9Totals.holesPlayed,
         };
 
+        // Calculate differences vs objectives
+        const strokesDiff = totalTotals.strokes - totalPar;
+        const puttsDiff = totalTotals.putts - (totalTotals.holesPlayed * 2);
+        const expectedPoints = totalTotals.holesPlayed * 2;
+        const pointsDiff = totalTotals.stablefordPoints - expectedPoints;
+
         return (
           <Card key={player.id}>
             <CardHeader className="pb-2">
@@ -307,20 +339,31 @@ export function RoundCard() {
                   {round.gameMode === "matchplay" ? (
                     <>
                       <div className="text-2xl font-bold text-primary">
-                        {totalTotals.stablefordPoints} pts
+                        {totalTotals.stablefordPoints} pts{" "}
+                        <span className={`text-sm ${pointsDiff < 0 ? "text-red-500" : "text-foreground"}`}>
+                          ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
+                        </span>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {totalTotals.strokes} golpes ({totalTotals.strokes - totalPar >= 0 ? "+" : ""}{totalTotals.strokes - totalPar})
+                        {totalTotals.strokes} golpes{" "}
+                        <span className={strokesDiff > 0 ? "text-red-500" : ""}>
+                          ({strokesDiff >= 0 ? "+" : ""}{strokesDiff})
+                        </span>
                       </p>
-                      <p className="text-xs text-muted-foreground">Stableford</p>
                     </>
                   ) : (
                     <>
                       <div className="text-2xl font-bold text-primary">
-                        {totalTotals.points} pts
+                        {totalTotals.points} pts{" "}
+                        <span className={`text-sm ${pointsDiff < 0 ? "text-red-500" : "text-foreground"}`}>
+                          ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
+                        </span>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {totalTotals.strokes} golpes ({totalTotals.strokes - totalPar >= 0 ? "+" : ""}{totalTotals.strokes - totalPar})
+                        {totalTotals.strokes} golpes{" "}
+                        <span className={strokesDiff > 0 ? "text-red-500" : ""}>
+                          ({strokesDiff >= 0 ? "+" : ""}{strokesDiff})
+                        </span>
                       </p>
                       {round.gameMode === "sindicato" && (
                         <p className="text-xs text-muted-foreground">
@@ -381,6 +424,7 @@ export function RoundCard() {
                             const score = player.scores[h];
                             const isCompleted = round.completedHoles?.includes(h);
                             const colorClass = getScoreColor(player, h);
+                            const hasStroke = hasStrokeOnHole(player, h);
                             return (
                               <td
                                 key={h}
@@ -388,7 +432,7 @@ export function RoundCard() {
                                   colorClass ? colorClass + " rounded" : (isCompleted ? "text-foreground" : "text-muted-foreground/50")
                                 }`}
                               >
-                                {score?.strokes || "-"}
+                                {score?.strokes || "-"}{hasStroke && <span className="text-[8px] align-super">*</span>}
                               </td>
                             );
                           })}
@@ -493,6 +537,7 @@ export function RoundCard() {
                             const score = player.scores[h];
                             const isCompleted = round.completedHoles?.includes(h);
                             const colorClass = getScoreColor(player, h);
+                            const hasStroke = hasStrokeOnHole(player, h);
                             return (
                               <td
                                 key={h}
@@ -500,7 +545,7 @@ export function RoundCard() {
                                   colorClass ? colorClass + " rounded" : (isCompleted ? "text-foreground" : "text-muted-foreground/50")
                                 }`}
                               >
-                                {score?.strokes || "-"}
+                                {score?.strokes || "-"}{hasStroke && <span className="text-[8px] align-super">*</span>}
                               </td>
                             );
                           })}
@@ -583,16 +628,31 @@ export function RoundCard() {
               {/* Summary */}
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <div className="p-2 bg-muted rounded">
-                  <div className="text-lg font-bold">{totalTotals.strokes}</div>
+                  <div className="text-lg font-bold">
+                    {totalTotals.strokes}{" "}
+                    <span className={`text-sm ${strokesDiff > 0 ? "text-red-500" : "text-green-600"}`}>
+                      ({strokesDiff >= 0 ? "+" : ""}{strokesDiff})
+                    </span>
+                  </div>
                   <div className="text-xs text-muted-foreground">Golpes</div>
                 </div>
                 <div className="p-2 bg-muted rounded">
-                  <div className="text-lg font-bold">{totalTotals.putts}</div>
+                  <div className="text-lg font-bold">
+                    {totalTotals.putts}{" "}
+                    <span className={`text-sm ${puttsDiff > 0 ? "text-red-500" : "text-green-600"}`}>
+                      ({puttsDiff >= 0 ? "+" : ""}{puttsDiff})
+                    </span>
+                  </div>
                   <div className="text-xs text-muted-foreground">Putts</div>
                 </div>
                 {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
                   <div className="p-2 bg-primary/10 rounded">
-                    <div className="text-lg font-bold text-primary">{totalTotals.points}</div>
+                    <div className="text-lg font-bold text-primary">
+                      {totalTotals.points}{" "}
+                      <span className={`text-sm ${pointsDiff < 0 ? "text-red-500" : "text-green-600"}`}>
+                        ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
+                      </span>
+                    </div>
                     <div className="text-xs text-muted-foreground">Puntos</div>
                   </div>
                 )}
