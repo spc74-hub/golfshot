@@ -232,6 +232,17 @@ export const coursesApi = {
     return (result as { count: number }).count;
   },
 
+  getRounds: async (id: string): Promise<{
+    id: string;
+    round_date: string;
+    players: Array<{ name: string; scores: Record<string, { strokes: number }> }>;
+    is_finished: boolean;
+    course_length: string;
+    game_mode: string;
+  }[]> => {
+    return fetchWithAuth(`/courses/${id}/rounds`);
+  },
+
   migrate: async (): Promise<{ migrated: string[]; skipped: string[] }> => {
     return fetchWithAuth("/courses/migrate", { method: "POST" });
   },

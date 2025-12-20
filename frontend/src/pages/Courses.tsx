@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useCourses, useDeleteCourse, useUpdateCourse } from "@/hooks/useCourses";
 import { coursesApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -40,12 +41,24 @@ import {
   Flag,
   Target,
   AlertTriangle,
+  History,
+  ExternalLink,
 } from "lucide-react";
 import type { Course, HoleData, Tee } from "@/types";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+type CourseRound = {
+  id: string;
+  round_date: string;
+  players: Array<{ name: string; scores: Record<string, { strokes: number }> }>;
+  is_finished: boolean;
+  course_length: string;
+  game_mode: string;
+};
+
 export function Courses() {
+  const navigate = useNavigate();
   const { data: courses, isLoading } = useCourses();
   const deleteCourse = useDeleteCourse();
   const updateCourse = useUpdateCourse();
@@ -58,6 +71,8 @@ export function Courses() {
     name: string;
     tees: Tee[];
   }>({ name: "", tees: [] });
+  const [courseRounds, setCourseRounds] = useState<Record<string, CourseRound[]>>({});
+  const [loadingRounds, setLoadingRounds] = useState<string | null>(null);
 
   // When delete dialog opens, fetch rounds count
   useEffect(() => {
@@ -74,8 +89,24 @@ export function Courses() {
     }
   };
 
-  const toggleExpand = (courseId: string) => {
-    setExpandedCourse(expandedCourse === courseId ? null : courseId);
+  const toggleExpand = async (courseId: string) => {
+    if (expandedCourse === courseId) {
+      setExpandedCourse(null);
+    } else {
+      setExpandedCourse(courseId);
+      // Load rounds if not already loaded
+      if (!courseRounds[courseId]) {
+        setLoadingRounds(courseId);
+        try {
+          const rounds = await coursesApi.getRounds(courseId);
+          setCourseRounds(prev => ({ ...prev, [courseId]: rounds }));
+        } catch (error) {
+          console.error("Error loading rounds:", error);
+        } finally {
+          setLoadingRounds(null);
+        }
+      }
+    }
   };
 
   const toggleFavorite = async (course: Course) => {
@@ -299,6 +330,62 @@ export function Courses() {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Rounds played */}
+                  <div>
+                    <h4 className="font-medium mb-2 flex items-center gap-2">
+                      <History className="h-4 w-4" />
+                      Rondas jugadas
+                    </h4>
+                    {loadingRounds === course.id ? (
+                      <div className="flex items-center justify-center py-4">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                      </div>
+                    ) : courseRounds[course.id]?.length > 0 ? (
+                      <div className="border rounded-lg divide-y">
+                        {courseRounds[course.id].map((round) => {
+                          const player = round.players[0];
+                          const totalStrokes = player?.scores
+                            ? Object.values(player.scores).reduce((sum, s) => sum + s.strokes, 0)
+                            : 0;
+                          return (
+                            <div
+                              key={round.id}
+                              className="p-3 flex items-center justify-between hover:bg-muted/50 cursor-pointer"
+                              onClick={() => navigate(`/round/${round.id}`)}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="text-sm">
+                                  <div className="font-medium">
+                                    {format(new Date(round.round_date), "dd MMM yyyy", { locale: es })}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {round.game_mode === "stableford" ? "Stableford" :
+                                     round.game_mode === "stroke" ? "Stroke Play" :
+                                     round.game_mode === "sindicato" ? "Sindicato" :
+                                     round.game_mode === "matchplay" ? "Match Play" : round.game_mode}
+                                    {round.course_length !== "18" && ` • ${round.course_length === "front9" ? "1-9" : "10-18"}`}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {totalStrokes > 0 && (
+                                  <Badge variant="outline">{totalStrokes} golpes</Badge>
+                                )}
+                                <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground py-2">
+                        No hay rondas jugadas en este campo
+                      </p>
+                    )}
                   </div>
 
                   <Separator />

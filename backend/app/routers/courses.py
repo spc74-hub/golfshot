@@ -257,6 +257,31 @@ async def get_course_rounds_count(
         )
 
 
+@router.get("/{course_id}/rounds")
+async def get_course_rounds(
+    course_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Get all rounds associated with a course."""
+    supabase = get_supabase_client()
+
+    try:
+        response = (
+            supabase.table("rounds")
+            .select("id, round_date, players, is_finished, course_length, game_mode")
+            .eq("course_id", course_id)
+            .eq("user_id", current_user.id)
+            .order("round_date", desc=True)
+            .execute()
+        )
+        return response.data or []
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
 @router.delete("/{course_id}")
 async def delete_course(
     course_id: str,

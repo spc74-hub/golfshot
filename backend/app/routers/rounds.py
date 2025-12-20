@@ -469,10 +469,43 @@ async def save_imported_round(
                 }
                 completed_holes.append(hole_num)
 
+        # Get player name and try to match with current user
+        imported_player_name = round_info.get("player_name", "Jugador")
+        user_display_name = current_user.display_name or ""
+
+        # Check if imported player name matches the current user
+        # Match if: names are similar (case-insensitive partial match)
+        def names_match(imported: str, user: str) -> bool:
+            if not imported or not user:
+                return False
+            imported_lower = imported.lower().strip()
+            user_lower = user.lower().strip()
+            # Check if one contains the other
+            if imported_lower in user_lower or user_lower in imported_lower:
+                return True
+            # Check first name match
+            imported_parts = imported_lower.split()
+            user_parts = user_lower.split()
+            if imported_parts and user_parts:
+                # Match if first names are similar or one is abbreviation of other
+                if imported_parts[0] == user_parts[0]:
+                    return True
+                # Check if imported is abbreviation (e.g., "sporcar" for "Sergio Porcar")
+                user_initials = "".join([p[0] for p in user_parts])
+                if imported_lower.startswith(user_initials) or imported_lower in user_initials:
+                    return True
+                # Check if imported starts with first letters of user name parts
+                if any(user_p.startswith(imported_parts[0][:3]) for user_p in user_parts):
+                    return True
+            return False
+
+        # Use user's display name if there's a match, otherwise use imported name
+        final_player_name = user_display_name if names_match(imported_player_name, user_display_name) else imported_player_name
+
         # Create the player
         player = {
             "id": str(uuid.uuid4()),
-            "name": round_info.get("player_name", current_user.display_name or "Jugador"),
+            "name": final_player_name or "Jugador",
             "od_handicap_index": player_handicap_index,
             "tee_box": tee_played.get("name", "Standard"),
             "team": None,
