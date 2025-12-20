@@ -140,7 +140,7 @@ export function Stats() {
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Puntos por ronda
+              Puntos equivalentes a 18 hoyos
             </p>
           </CardContent>
         </Card>
@@ -168,38 +168,89 @@ export function Stats() {
         </Card>
       </div>
 
-      {/* Best Round Details */}
-      {stats.bestRoundScore !== null && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Award className="h-5 w-5" />
-              Tu Mejor Ronda
-            </CardTitle>
-            <CardDescription>
-              Detalles de tu mejor rendimiento
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-lg px-3 py-1">
-                {stats.bestRoundScore} golpes
-              </Badge>
-            </div>
-            {stats.bestRoundCourse && (
-              <div className="flex items-center gap-2 text-sm">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span>{stats.bestRoundCourse}</span>
-              </div>
-            )}
-            {stats.bestRoundDate && (
-              <div className="flex items-center gap-2 text-sm">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span>{formatDate(stats.bestRoundDate)}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {/* Best Round Details - Grid for 18 and 9 holes */}
+      {(stats.bestRoundScore !== null || stats.bestRound9Score !== null) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Best 18-hole Round */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Award className="h-5 w-5" />
+                Tu Mejor Ronda (18 Hoyos)
+              </CardTitle>
+              <CardDescription>
+                Detalles de tu mejor rendimiento
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {stats.bestRoundScore !== null ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-lg px-3 py-1">
+                      {stats.bestRoundScore} golpes
+                    </Badge>
+                  </div>
+                  {stats.bestRoundCourse && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <span>{stats.bestRoundCourse}</span>
+                    </div>
+                  )}
+                  {stats.bestRoundDate && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span>{formatDate(stats.bestRoundDate)}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No hay rondas de 18 hoyos completadas
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Best 9-hole Round */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Award className="h-5 w-5" />
+                Tu Mejor Ronda (9 Hoyos)
+              </CardTitle>
+              <CardDescription>
+                Detalles de tu mejor rendimiento
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {stats.bestRound9Score !== null ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-lg px-3 py-1">
+                      {stats.bestRound9Score} golpes
+                    </Badge>
+                  </div>
+                  {stats.bestRound9Course && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <span>{stats.bestRound9Course}</span>
+                    </div>
+                  )}
+                  {stats.bestRound9Date && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span>{formatDate(stats.bestRound9Date)}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No hay rondas de 9 hoyos completadas
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Average Scores by Hole Type */}
@@ -406,9 +457,12 @@ export function Stats() {
                 Las estadisticas se calculan a partir de tus rondas completadas.
               </p>
               <p>
-                El handicap virtual se basa en la formula oficial: promedio de
-                los mejores 8 diferenciales de tus ultimas 20 rondas de 18
-                hoyos.
+                El <strong>handicap virtual</strong> se basa en la formula oficial: promedio de
+                los mejores 8 diferenciales de tus ultimas 20 rondas de <strong>18 hoyos</strong>.
+              </p>
+              <p>
+                El <strong>promedio Stableford</strong> normaliza las rondas de 9 hoyos
+                duplicando los puntos para obtener un equivalente de 18 hoyos.
               </p>
             </div>
           </div>

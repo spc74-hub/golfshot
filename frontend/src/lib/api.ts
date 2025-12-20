@@ -188,9 +188,14 @@ export const usersApi = {
       avgStrokes18holes: data.avg_strokes_18holes,
       avgStablefordPoints: data.avg_stableford_points,
       virtualHandicap: data.virtual_handicap,
+      // Best 18-hole round
       bestRoundScore: data.best_round_score,
       bestRoundDate: data.best_round_date,
       bestRoundCourse: data.best_round_course,
+      // Best 9-hole round
+      bestRound9Score: data.best_round_9_score,
+      bestRound9Date: data.best_round_9_date,
+      bestRound9Course: data.best_round_9_course,
     };
   },
 };

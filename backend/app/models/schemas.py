@@ -198,8 +198,13 @@ class UserStats(BaseModel):
     avg_putts_18holes: Optional[float] = None
     avg_strokes_9holes: Optional[float] = None
     avg_strokes_18holes: Optional[float] = None
-    avg_stableford_points: Optional[float] = None
-    virtual_handicap: Optional[float] = None
+    avg_stableford_points: Optional[float] = None  # Normalized to 18-hole equivalent
+    virtual_handicap: Optional[float] = None  # Based on 18-hole rounds only
+    # Best round for 18 holes
     best_round_score: Optional[int] = None
     best_round_date: Optional[str] = None
     best_round_course: Optional[str] = None
+    # Best round for 9 holes
+    best_round_9_score: Optional[int] = None
+    best_round_9_date: Optional[str] = None
+    best_round_9_course: Optional[str] = None

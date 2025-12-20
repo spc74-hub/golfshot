@@ -209,6 +209,9 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 best_round_score=None,
                 best_round_date=None,
                 best_round_course=None,
+                best_round_9_score=None,
+                best_round_9_date=None,
+                best_round_9_course=None,
             )
 
         # Get all courses for hole data
@@ -224,10 +227,12 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         putts_18holes = []
         strokes_9holes = []
         strokes_18holes = []
-        stableford_points = []
-        score_differentials = []  # For handicap calculation
-        best_score = None
-        best_score_info = None
+        stableford_points_normalized = []  # Normalized to 18-hole equivalent
+        score_differentials = []  # For handicap calculation (18-hole only)
+        best_score_18 = None
+        best_score_18_info = None
+        best_score_9 = None
+        best_score_9_info = None
 
         for round_data in rounds:
             course = courses.get(round_data.get("course_id"))
@@ -318,35 +323,48 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 round_stableford += points
 
             # Track round totals
-            if course_length in ["front9", "back9"]:
+            is_9_hole_round = course_length in ["front9", "back9"]
+            if is_9_hole_round:
                 strokes_9holes.append(round_strokes)
                 if round_putts > 0:
                     putts_9holes.append(round_putts)
+                # Track best 9-hole score
+                if round_strokes > 0 and (best_score_9 is None or round_strokes < best_score_9):
+                    best_score_9 = round_strokes
+                    best_score_9_info = {
+                        "score": round_strokes,
+                        "date": round_data.get("round_date"),
+                        "course": round_data.get("course_name"),
+                    }
             else:
                 strokes_18holes.append(round_strokes)
                 if round_putts > 0:
                     putts_18holes.append(round_putts)
+                # Track best 18-hole score
+                if round_strokes > 0 and (best_score_18 is None or round_strokes < best_score_18):
+                    best_score_18 = round_strokes
+                    best_score_18_info = {
+                        "score": round_strokes,
+                        "date": round_data.get("round_date"),
+                        "course": round_data.get("course_name"),
+                    }
 
             if round_putts > 0:
                 total_putts.append(round_putts)
 
-            if round_data.get("game_mode") == "stableford":
-                stableford_points.append(round_stableford)
+            # Track Stableford points - normalize to 18-hole equivalent
+            if round_data.get("game_mode") == "stableford" and round_stableford > 0:
+                if is_9_hole_round:
+                    # Double the points to get 18-hole equivalent
+                    stableford_points_normalized.append(round_stableford * 2)
+                else:
+                    stableford_points_normalized.append(round_stableford)
 
             # Calculate score differential for handicap (only for 18-hole rounds)
             if course_length == "18" and round_strokes > 0:
                 # Differential = (Score - Course Rating) * 113 / Slope
                 differential = (round_strokes - course_rating) * 113 / slope
                 score_differentials.append(differential)
-
-                # Track best score
-                if best_score is None or round_strokes < best_score:
-                    best_score = round_strokes
-                    best_score_info = {
-                        "score": round_strokes,
-                        "date": round_data.get("round_date"),
-                        "course": round_data.get("course_name"),
-                    }
 
         # Calculate averages
         avg_par3 = sum(par3_strokes) / len(par3_strokes) if par3_strokes else None
@@ -357,7 +375,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         avg_putts_18 = sum(putts_18holes) / len(putts_18holes) if putts_18holes else None
         avg_9holes = sum(strokes_9holes) / len(strokes_9holes) if strokes_9holes else None
         avg_18holes = sum(strokes_18holes) / len(strokes_18holes) if strokes_18holes else None
-        avg_stableford = sum(stableford_points) / len(stableford_points) if stableford_points else None
+        # Stableford average using normalized 18-hole equivalent points
+        avg_stableford = sum(stableford_points_normalized) / len(stableford_points_normalized) if stableford_points_normalized else None
 
         # Calculate virtual handicap (best 8 of last 20 differentials)
         virtual_hcp = None
@@ -385,9 +404,14 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
             avg_strokes_18holes=round(avg_18holes, 2) if avg_18holes else None,
             avg_stableford_points=round(avg_stableford, 2) if avg_stableford else None,
             virtual_handicap=round(virtual_hcp, 1) if virtual_hcp else None,
-            best_round_score=best_score_info["score"] if best_score_info else None,
-            best_round_date=best_score_info["date"] if best_score_info else None,
-            best_round_course=best_score_info["course"] if best_score_info else None,
+            # Best 18-hole round
+            best_round_score=best_score_18_info["score"] if best_score_18_info else None,
+            best_round_date=best_score_18_info["date"] if best_score_18_info else None,
+            best_round_course=best_score_18_info["course"] if best_score_18_info else None,
+            # Best 9-hole round
+            best_round_9_score=best_score_9_info["score"] if best_score_9_info else None,
+            best_round_9_date=best_score_9_info["date"] if best_score_9_info else None,
+            best_round_9_course=best_score_9_info["course"] if best_score_9_info else None,
         )
     except HTTPException:
         raise

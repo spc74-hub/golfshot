@@ -163,11 +163,16 @@ export interface UserStats {
   avgPutts18holes: number | null;
   avgStrokes9holes: number | null;
   avgStrokes18holes: number | null;
-  avgStablefordPoints: number | null;
-  virtualHandicap: number | null;
+  avgStablefordPoints: number | null;  // Normalized to 18-hole equivalent
+  virtualHandicap: number | null;  // Based on 18-hole rounds only
+  // Best 18-hole round
   bestRoundScore: number | null;
   bestRoundDate: string | null;
   bestRoundCourse: string | null;
+  // Best 9-hole round
+  bestRound9Score: number | null;
+  bestRound9Date: string | null;
+  bestRound9Course: string | null;
 }
 
 export interface ScoreDistribution {
