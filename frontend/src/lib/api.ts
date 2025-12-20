@@ -15,6 +15,7 @@ import type {
   CreateSavedPlayerInput,
   UpdateSavedPlayerInput,
   Permission,
+  JoinRoundResponse,
 } from "@/types";
 
 // Get API URL from environment or use default
@@ -84,6 +85,10 @@ function transformRound(backendRound: Record<string, unknown>): Round {
     currentHole: (backendRound.current_hole ?? backendRound.currentHole) as number,
     completedHoles: (backendRound.completed_holes ?? backendRound.completedHoles) as number[],
     players: ((backendRound.players || []) as Record<string, unknown>[]).map(transformPlayer),
+    // Shared round fields
+    shareCode: (backendRound.share_code ?? backendRound.shareCode) as string | null | undefined,
+    collaborators: (backendRound.collaborators ?? []) as string[],
+    isOwner: (backendRound.is_owner ?? backendRound.isOwner ?? true) as boolean,
     createdAt: backendRound.created_at as string,
     updatedAt: backendRound.updated_at as string,
   };
@@ -321,6 +326,7 @@ export const roundsApi = {
     if (inputData.currentHole !== undefined) backendData.current_hole = inputData.currentHole;
     if (inputData.completedHoles !== undefined) backendData.completed_holes = inputData.completedHoles;
     if (inputData.isFinished !== undefined) backendData.is_finished = inputData.isFinished;
+    if (inputData.shareEnabled !== undefined) backendData.share_enabled = inputData.shareEnabled;
 
     // Transform players to backend format if present
     if (inputData.players && Array.isArray(inputData.players)) {
@@ -371,6 +377,32 @@ export const roundsApi = {
       body: JSON.stringify(roundData),
     });
     return transformRound(result as Record<string, unknown>);
+  },
+
+  // Shared rounds
+  joinByCode: async (shareCode: string): Promise<JoinRoundResponse> => {
+    const result = await fetchWithAuth("/rounds/join", {
+      method: "POST",
+      body: JSON.stringify({ share_code: shareCode.toUpperCase() }),
+    });
+    return {
+      roundId: (result as Record<string, unknown>).round_id as string,
+      message: (result as Record<string, unknown>).message as string,
+    };
+  },
+
+  enableSharing: async (id: string): Promise<Round> => {
+    const result = await fetchWithAuth(`/rounds/${id}/share`, { method: "POST" });
+    return transformRound(result as Record<string, unknown>);
+  },
+
+  disableSharing: async (id: string): Promise<Round> => {
+    const result = await fetchWithAuth(`/rounds/${id}/share`, { method: "DELETE" });
+    return transformRound(result as Record<string, unknown>);
+  },
+
+  leaveShared: async (id: string): Promise<void> => {
+    await fetchWithAuth(`/rounds/${id}/leave`, { method: "DELETE" });
   },
 };
 

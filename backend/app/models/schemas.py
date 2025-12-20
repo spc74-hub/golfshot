@@ -167,6 +167,7 @@ class RoundUpdate(BaseModel):
     completed_holes: Optional[list[int]] = None
     players: Optional[list[PlayerResponse]] = None
     is_finished: Optional[bool] = None
+    share_enabled: Optional[bool] = None  # Enable/disable sharing
 
 
 class RoundResponse(BaseModel):
@@ -189,8 +190,23 @@ class RoundResponse(BaseModel):
     current_hole: int
     completed_holes: list[int]
     players: list[PlayerResponse]
+    # Shared round fields
+    share_code: Optional[str] = None
+    collaborators: list[str] = []
+    is_owner: bool = True  # True if current user is the round owner
     created_at: datetime
     updated_at: datetime
+
+
+class JoinRoundRequest(BaseModel):
+    """Request to join a shared round by code"""
+    share_code: str = Field(min_length=6, max_length=6)
+
+
+class JoinRoundResponse(BaseModel):
+    """Response after joining a shared round"""
+    round_id: str
+    message: str
 
 
 # Admin stats schema

@@ -93,6 +93,10 @@ export interface Round {
   currentHole: number;
   completedHoles: number[];
   players: Player[];
+  // Shared round fields
+  shareCode?: string | null;
+  collaborators?: string[];
+  isOwner?: boolean; // True if current user is the round owner
   createdAt: string;
   updatedAt: string;
 }
@@ -118,6 +122,17 @@ export interface UpdateRoundInput {
   completedHoles?: number[];
   players?: Player[];
   isFinished?: boolean;
+  shareEnabled?: boolean; // Enable/disable sharing
+}
+
+// Shared round types
+export interface JoinRoundRequest {
+  shareCode: string;
+}
+
+export interface JoinRoundResponse {
+  roundId: string;
+  message: string;
 }
 
 export interface CreatePlayerInput {

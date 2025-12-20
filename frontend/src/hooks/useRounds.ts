@@ -9,11 +9,12 @@ export function useRounds() {
   });
 }
 
-export function useRound(id: string | undefined) {
+export function useRound(id: string | undefined, options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: ["rounds", id],
     queryFn: () => roundsApi.get(id!),
     enabled: !!id,
+    refetchInterval: options?.refetchInterval,
   });
 }
 

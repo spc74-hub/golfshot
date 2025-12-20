@@ -1,7 +1,10 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useRounds } from "@/hooks/useRounds";
+import { roundsApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -9,8 +12,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, History, Play, Flag, Users, BarChart3, MapPin } from "lucide-react";
+import { Plus, History, Play, Flag, Users, BarChart3, MapPin, UserPlus } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -31,12 +42,41 @@ function formatRoundDate(dateStr: string | undefined): string {
 
 export function Home() {
   const { user } = useAuth();
-  const { data: rounds, isLoading } = useRounds();
+  const { data: rounds, isLoading, refetch } = useRounds();
+  const navigate = useNavigate();
+
+  // Join round dialog
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [shareCode, setShareCode] = useState("");
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   // Get active (unfinished) rounds
   const activeRounds = rounds?.filter((r) => !r.isFinished) || [];
   // Get recent finished rounds
   const recentRounds = rounds?.filter((r) => r.isFinished).slice(0, 3) || [];
+
+  const handleJoinRound = async () => {
+    if (!shareCode.trim() || shareCode.length !== 6) {
+      setJoinError("El codigo debe tener 6 caracteres");
+      return;
+    }
+
+    setJoinLoading(true);
+    setJoinError(null);
+
+    try {
+      const result = await roundsApi.joinByCode(shareCode);
+      setJoinDialogOpen(false);
+      setShareCode("");
+      await refetch();
+      navigate(`/round/play?id=${result.roundId}`);
+    } catch (error) {
+      setJoinError(error instanceof Error ? error.message : "Error al unirse");
+    } finally {
+      setJoinLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -115,6 +155,20 @@ export function Home() {
             </CardHeader>
           </Card>
         </Link>
+        <Card
+          className="hover:bg-accent transition-colors cursor-pointer border-dashed"
+          onClick={() => setJoinDialogOpen(true)}
+        >
+          <CardHeader className="flex flex-row items-center space-x-4 pb-2">
+            <div className="p-2 bg-green-500/10 rounded-lg">
+              <UserPlus className="h-6 w-6 text-green-600" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">Unirse a Partida</CardTitle>
+              <CardDescription>Introduce un codigo para unirte</CardDescription>
+            </div>
+          </CardHeader>
+        </Card>
       </div>
 
       {/* Active Rounds */}
@@ -207,6 +261,38 @@ export function Home() {
           </CardContent>
         </Card>
       )}
+
+      {/* Join Round Dialog */}
+      <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unirse a una partida</DialogTitle>
+            <DialogDescription>
+              Introduce el codigo de 6 caracteres que te ha compartido otro jugador
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Ej: ABC123"
+              value={shareCode}
+              onChange={(e) => setShareCode(e.target.value.toUpperCase())}
+              maxLength={6}
+              className="text-center text-2xl font-mono tracking-widest"
+            />
+            {joinError && (
+              <p className="text-sm text-red-500 text-center">{joinError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setJoinDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleJoinRound} disabled={joinLoading || shareCode.length !== 6}>
+              {joinLoading ? "Uniendo..." : "Unirse"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

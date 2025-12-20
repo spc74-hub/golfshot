@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useRound, useUpdateRound, useFinishRound, useDeleteRound } from "@/hooks/useRounds";
 import { useCourse } from "@/hooks/useCourses";
+import { roundsApi } from "@/lib/api";
 import {
   calculateStablefordPoints,
   calculateSindicatoPoints,
@@ -31,7 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LogOut, Trash2, Save, ClipboardList } from "lucide-react";
+import { LogOut, Trash2, Save, ClipboardList, Share2, Copy, Check, Users } from "lucide-react";
 import type { Player, HoleData, Score } from "@/types";
 import { SCORE_COLORS, DEFAULT_PUTTS } from "@/types";
 
@@ -40,8 +41,23 @@ export function RoundPlay() {
   const navigate = useNavigate();
   const roundId = searchParams.get("id");
 
-  const { data: round, isLoading: roundLoading } = useRound(roundId || undefined);
+  // Track if round is shared for polling
+  const [isSharedRound, setIsSharedRound] = useState(false);
+
+  const { data: round, isLoading: roundLoading } = useRound(roundId || undefined, {
+    // Poll every 5 seconds for shared rounds that are not finished
+    refetchInterval: isSharedRound ? 5000 : undefined,
+  });
   const { data: course } = useCourse(round?.courseId);
+
+  // Update shared round status when round data changes
+  useEffect(() => {
+    if (round) {
+      const hasCollaborators = round.collaborators && round.collaborators.length > 0;
+      const hasShareCode = !!round.shareCode;
+      setIsSharedRound((hasCollaborators || hasShareCode) && !round.isFinished);
+    }
+  }, [round]);
   const updateRound = useUpdateRound();
   const finishRound = useFinishRound();
   const deleteRound = useDeleteRound();
@@ -50,6 +66,43 @@ export function RoundPlay() {
   const [playerScores, setPlayerScores] = useState<Record<string, Score>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
+
+  // Share dialog state
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  // Handle enabling/disabling sharing
+  const handleToggleShare = async () => {
+    if (!roundId || !round) return;
+
+    setShareLoading(true);
+    try {
+      if (round.shareCode) {
+        await roundsApi.disableSharing(roundId);
+      } else {
+        await roundsApi.enableSharing(roundId);
+      }
+      // Refetch to get updated share code
+      window.location.reload();
+    } catch (error) {
+      console.error("Error toggling share:", error);
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  // Copy share code to clipboard
+  const handleCopyCode = async () => {
+    if (!round?.shareCode) return;
+    try {
+      await navigator.clipboard.writeText(round.shareCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch (error) {
+      console.error("Error copying code:", error);
+    }
+  };
 
   // Get holes for this round
   const holes = useMemo(() => {
@@ -477,14 +530,32 @@ export function RoundPlay() {
             {round.gameMode === "sindicato" && "Sindicato"}
             {round.gameMode === "team" && "Equipos"}
             {round.gameMode === "matchplay" && "Match Play"}
+            {round.shareCode && (
+              <span className="ml-2 text-green-600">
+                <Users className="h-3 w-3 inline mr-1" />
+                Compartida
+              </span>
+            )}
           </p>
         </div>
-        <Link to={`/round/card?id=${roundId}`}>
-          <Button variant="ghost" size="sm" className="text-muted-foreground">
-            <ClipboardList className="h-4 w-4 mr-1" />
-            Tarjeta
-          </Button>
-        </Link>
+        <div className="flex gap-1">
+          {round.isOwner !== false && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowShareDialog(true)}
+              className={round.shareCode ? "text-green-600" : "text-muted-foreground"}
+            >
+              <Share2 className="h-4 w-4" />
+            </Button>
+          )}
+          <Link to={`/round/card?id=${roundId}`}>
+            <Button variant="ghost" size="sm" className="text-muted-foreground">
+              <ClipboardList className="h-4 w-4 mr-1" />
+              Tarjeta
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Exit Dialog */}
@@ -519,6 +590,63 @@ export function RoundPlay() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setShowExitDialog(false)}>
               Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Compartir partida</DialogTitle>
+            <DialogDescription>
+              {round.shareCode
+                ? "Comparte este codigo con otro jugador para que pueda unirse y ver/editar la partida en tiempo real."
+                : "Activa el modo compartido para jugar con otro usuario. Ambos podreis ver y editar los resultados."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {round.shareCode ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center gap-2">
+                <div className="text-4xl font-mono font-bold tracking-widest bg-muted px-4 py-2 rounded-lg">
+                  {round.shareCode}
+                </div>
+                <Button variant="outline" size="icon" onClick={handleCopyCode}>
+                  {codeCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+              {round.collaborators && round.collaborators.length > 0 && (
+                <p className="text-sm text-center text-muted-foreground">
+                  {round.collaborators.length} usuario(s) conectado(s)
+                </p>
+              )}
+              <Button
+                variant="destructive"
+                className="w-full"
+                onClick={handleToggleShare}
+                disabled={shareLoading}
+              >
+                Dejar de compartir
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <Button
+                className="w-full"
+                onClick={handleToggleShare}
+                disabled={shareLoading}
+              >
+                <Share2 className="h-4 w-4 mr-2" />
+                {shareLoading ? "Activando..." : "Activar compartir"}
+              </Button>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowShareDialog(false)}>
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>

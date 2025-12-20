@@ -1,11 +1,13 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
-from app.models.schemas import RoundCreate, RoundUpdate, RoundResponse, UserResponse
+from app.models.schemas import RoundCreate, RoundUpdate, RoundResponse, UserResponse, JoinRoundRequest, JoinRoundResponse
 from app.services.supabase import get_supabase_client
 from app.services.round_ocr import extract_round_data
 from app.dependencies import get_current_user
 import uuid
 import time
 import base64
+import random
+import string
 
 router = APIRouter(prefix="/rounds", tags=["rounds"])
 
@@ -16,20 +18,49 @@ def calculate_playing_handicap(handicap_index: float, slope: int, percentage: in
     return round(playing_hcp * percentage / 100)
 
 
+def generate_share_code() -> str:
+    """Generate a 6-character alphanumeric share code (no confusing chars like 0/O, 1/I/L)."""
+    chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(random.choice(chars) for _ in range(6))
+
+
 @router.get("/", response_model=list[RoundResponse])
 async def list_rounds(current_user: UserResponse = Depends(get_current_user)):
-    """List all rounds for the current user."""
+    """List all rounds for the current user (owned and shared)."""
     supabase = get_supabase_client()
 
     try:
-        response = (
+        # Get rounds owned by user
+        owned_response = (
             supabase.table("rounds")
             .select("*")
             .eq("user_id", current_user.id)
             .order("round_date", desc=True)
             .execute()
         )
-        return response.data or []
+        owned_rounds = owned_response.data or []
+
+        # Get rounds where user is a collaborator
+        shared_response = (
+            supabase.table("rounds")
+            .select("*")
+            .contains("collaborators", [current_user.id])
+            .order("round_date", desc=True)
+            .execute()
+        )
+        shared_rounds = shared_response.data or []
+
+        # Mark ownership and merge
+        for r in owned_rounds:
+            r["is_owner"] = True
+        for r in shared_rounds:
+            r["is_owner"] = False
+
+        # Combine and sort by date
+        all_rounds = owned_rounds + shared_rounds
+        all_rounds.sort(key=lambda x: x.get("round_date", ""), reverse=True)
+
+        return all_rounds
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -42,7 +73,7 @@ async def get_round(
     round_id: str,
     current_user: UserResponse = Depends(get_current_user),
 ):
-    """Get round by ID."""
+    """Get round by ID (owned or shared)."""
     supabase = get_supabase_client()
 
     try:
@@ -50,7 +81,6 @@ async def get_round(
             supabase.table("rounds")
             .select("*")
             .eq("id", round_id)
-            .eq("user_id", current_user.id)
             .single()
             .execute()
         )
@@ -61,7 +91,21 @@ async def get_round(
                 detail="Round not found",
             )
 
-        return response.data
+        round_data = response.data
+        user_id = round_data.get("user_id")
+        collaborators = round_data.get("collaborators") or []
+
+        # Check if user has access (owner or collaborator)
+        if user_id != current_user.id and current_user.id not in collaborators:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied",
+            )
+
+        # Add is_owner flag
+        round_data["is_owner"] = user_id == current_user.id
+
+        return round_data
     except HTTPException:
         raise
     except Exception as e:
@@ -173,14 +217,14 @@ async def update_round(
     round_update: RoundUpdate,
     current_user: UserResponse = Depends(get_current_user),
 ):
-    """Update a round."""
+    """Update a round (owner or collaborator can update scores)."""
     supabase = get_supabase_client()
 
     try:
-        # Check ownership
+        # Check ownership or collaboration
         existing = (
             supabase.table("rounds")
-            .select("user_id")
+            .select("user_id, collaborators, share_code")
             .eq("id", round_id)
             .single()
             .execute()
@@ -192,7 +236,12 @@ async def update_round(
                 detail="Round not found",
             )
 
-        if existing.data["user_id"] != current_user.id:
+        user_id = existing.data["user_id"]
+        collaborators = existing.data.get("collaborators") or []
+        is_owner = user_id == current_user.id
+        is_collaborator = current_user.id in collaborators
+
+        if not is_owner and not is_collaborator:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied",
@@ -213,6 +262,29 @@ async def update_round(
         if round_update.is_finished is not None:
             update_data["is_finished"] = round_update.is_finished
 
+        # Handle share_enabled (only owner can change)
+        if round_update.share_enabled is not None and is_owner:
+            if round_update.share_enabled:
+                # Enable sharing - generate code if not exists
+                if not existing.data.get("share_code"):
+                    # Generate unique share code
+                    for _ in range(10):  # Try up to 10 times
+                        code = generate_share_code()
+                        # Check if code already exists
+                        check = supabase.table("rounds").select("id").eq("share_code", code).execute()
+                        if not check.data:
+                            update_data["share_code"] = code
+                            break
+                    else:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Could not generate unique share code",
+                        )
+            else:
+                # Disable sharing - remove code and collaborators
+                update_data["share_code"] = None
+                update_data["collaborators"] = []
+
         if not update_data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -227,7 +299,9 @@ async def update_round(
                 detail="Round not found",
             )
 
-        return response.data[0]
+        result = response.data[0]
+        result["is_owner"] = is_owner
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -548,6 +622,251 @@ async def save_imported_round(
             )
 
         return response.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+# ============================================
+# SHARED ROUNDS ENDPOINTS
+# ============================================
+
+
+@router.post("/join", response_model=JoinRoundResponse)
+async def join_round_by_code(
+    request: JoinRoundRequest,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Join a shared round by its share code."""
+    supabase = get_supabase_client()
+
+    try:
+        # Find round by share code (case-insensitive)
+        share_code = request.share_code.upper()
+        response = (
+            supabase.table("rounds")
+            .select("id, user_id, collaborators, is_finished")
+            .eq("share_code", share_code)
+            .single()
+            .execute()
+        )
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Partida no encontrada con ese codigo",
+            )
+
+        round_data = response.data
+        round_id = round_data["id"]
+        owner_id = round_data["user_id"]
+        collaborators = round_data.get("collaborators") or []
+
+        # Check if user is already owner
+        if owner_id == current_user.id:
+            return JoinRoundResponse(
+                round_id=round_id,
+                message="Ya eres el propietario de esta partida",
+            )
+
+        # Check if user is already a collaborator
+        if current_user.id in collaborators:
+            return JoinRoundResponse(
+                round_id=round_id,
+                message="Ya estas unido a esta partida",
+            )
+
+        # Check if round is finished
+        if round_data.get("is_finished"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Esta partida ya ha finalizado",
+            )
+
+        # Add user to collaborators
+        collaborators.append(current_user.id)
+        supabase.table("rounds").update({"collaborators": collaborators}).eq("id", round_id).execute()
+
+        return JoinRoundResponse(
+            round_id=round_id,
+            message="Te has unido a la partida correctamente",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.post("/{round_id}/share", response_model=RoundResponse)
+async def enable_round_sharing(
+    round_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Enable sharing for a round (generates share code)."""
+    supabase = get_supabase_client()
+
+    try:
+        # Check ownership
+        existing = (
+            supabase.table("rounds")
+            .select("user_id, share_code")
+            .eq("id", round_id)
+            .single()
+            .execute()
+        )
+
+        if not existing.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Round not found",
+            )
+
+        if existing.data["user_id"] != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo el propietario puede compartir la partida",
+            )
+
+        # If already has share code, return it
+        if existing.data.get("share_code"):
+            response = supabase.table("rounds").select("*").eq("id", round_id).single().execute()
+            result = response.data
+            result["is_owner"] = True
+            return result
+
+        # Generate unique share code
+        for _ in range(10):
+            code = generate_share_code()
+            check = supabase.table("rounds").select("id").eq("share_code", code).execute()
+            if not check.data:
+                break
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not generate unique share code",
+            )
+
+        # Update round with share code
+        response = (
+            supabase.table("rounds")
+            .update({"share_code": code})
+            .eq("id", round_id)
+            .execute()
+        )
+
+        result = response.data[0]
+        result["is_owner"] = True
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.delete("/{round_id}/share", response_model=RoundResponse)
+async def disable_round_sharing(
+    round_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Disable sharing for a round (removes share code and collaborators)."""
+    supabase = get_supabase_client()
+
+    try:
+        # Check ownership
+        existing = (
+            supabase.table("rounds")
+            .select("user_id")
+            .eq("id", round_id)
+            .single()
+            .execute()
+        )
+
+        if not existing.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Round not found",
+            )
+
+        if existing.data["user_id"] != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo el propietario puede desactivar el compartir",
+            )
+
+        # Remove share code and collaborators
+        response = (
+            supabase.table("rounds")
+            .update({"share_code": None, "collaborators": []})
+            .eq("id", round_id)
+            .execute()
+        )
+
+        result = response.data[0]
+        result["is_owner"] = True
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.delete("/{round_id}/leave")
+async def leave_shared_round(
+    round_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Leave a shared round (remove self from collaborators)."""
+    supabase = get_supabase_client()
+
+    try:
+        # Get round
+        existing = (
+            supabase.table("rounds")
+            .select("user_id, collaborators")
+            .eq("id", round_id)
+            .single()
+            .execute()
+        )
+
+        if not existing.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Round not found",
+            )
+
+        # Can't leave if you're the owner
+        if existing.data["user_id"] == current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El propietario no puede abandonar su propia partida",
+            )
+
+        collaborators = existing.data.get("collaborators") or []
+
+        if current_user.id not in collaborators:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No estas unido a esta partida",
+            )
+
+        # Remove user from collaborators
+        collaborators.remove(current_user.id)
+        supabase.table("rounds").update({"collaborators": collaborators}).eq("id", round_id).execute()
+
+        return {"message": "Has abandonado la partida"}
     except HTTPException:
         raise
     except Exception as e:
