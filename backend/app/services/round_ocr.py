@@ -135,43 +135,42 @@ async def extract_round_data(image_base64: str, media_type: str = "image/jpeg") 
 
 def calculate_hdj_from_stableford(total_strokes: int, total_par: int, stableford_points: int, num_holes: int) -> int:
     """
-    Calculate HDJ (playing handicap) from Stableford points.
+    Calculate HDJ (playing handicap for 18 holes) from Stableford points.
 
     In Stableford scoring:
     - Points = 2 + (par - strokes) + extra_strokes_from_hdj
     - For 18 holes, 36 points = playing to handicap exactly
-    - For 9 holes, 18 points = playing to handicap exactly
+    - For 9 holes, 18 points = playing to handicap exactly (with half the HDJ strokes)
 
     The formula to derive HDJ:
     - Expected points with 0 HDJ = 36 (18 holes) or 18 (9 holes)
     - Each stroke over par without HDJ = -1 point
-    - Actual points = expected_points - (strokes - par - HDJ)
-    - Therefore: HDJ = total_strokes - total_par - (expected_points - stableford_points)
+    - Points = expected_points - (gross_strokes - par - effective_hdj_strokes)
+    - Therefore: effective_hdj = points + (gross - par) - expected_points
 
-    Simplified: HDJ = total_strokes - total_par - expected_points + stableford_points
+    IMPORTANT: For 9-hole rounds, the calculated value represents the HDJ strokes
+    received for those 9 holes (approximately half of full HDJ). We need to
+    extrapolate to get the full 18-hole HDJ.
+
+    Example: 52 strokes, par 36, 11 points on 9 holes
+    - effective_hdj_9 = 11 + (52 - 36) - 18 = 11 + 16 - 18 = 9
+    - This means 9 strokes were received in 9 holes
+    - Full HDJ = 9 * 2 = 18 (approximately)
     """
     if stableford_points <= 0:
         return 0
 
     expected_points = 36 if num_holes == 18 else 18
 
-    # HDJ = strokes - par - (expected - actual)
-    # Example: 87 strokes, par 72, 43 points on 18 holes
-    # HDJ = 87 - 72 - (36 - 43) = 15 + 7 = 22... but wait
-    # Let's recalculate properly:
-    # With HDJ of 18, you get 18 extra strokes distributed
-    # If you shot 87 on par 72 = +15 over par
-    # With HDJ 18, your net score = 87 - 18 = 69, which is 3 under par
-    # That would give roughly 36 + 3 = 39 points... but he got 43
-    #
-    # Actually the correct formula:
-    # Stableford points = 2 per hole base + bonus strokes per hole
-    # For 18 holes: base = 36 points
-    # Net score = gross score - HDJ = strokes relative to par after HDJ adjustment
-    # Points = 36 - (gross_strokes - par - HDJ) = 36 - gross + par + HDJ
-    # HDJ = points - 36 + gross - par = points + (gross - par) - 36
+    # Calculate the effective HDJ strokes used in the round
+    effective_hdj_strokes = stableford_points + (total_strokes - total_par) - expected_points
 
-    calculated_hdj = stableford_points + (total_strokes - total_par) - expected_points
+    # For 9-hole rounds, extrapolate to full 18-hole HDJ
+    # In 9 holes you receive roughly half your HDJ strokes
+    if num_holes == 9:
+        calculated_hdj = effective_hdj_strokes * 2
+    else:
+        calculated_hdj = effective_hdj_strokes
 
     # Validate: HDJ should be between 0 and 54
     if calculated_hdj < 0:
