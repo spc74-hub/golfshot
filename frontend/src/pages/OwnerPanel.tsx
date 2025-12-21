@@ -79,6 +79,10 @@ export function OwnerPanel() {
   const [linkDialog, setLinkDialog] = useState<UserWithStats | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>("");
 
+  // Backfill state
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{ message: string; updated: number; skipped: number } | null>(null);
+
   useEffect(() => {
     if (isOwner) {
       loadData();
@@ -170,6 +174,20 @@ export function OwnerPanel() {
       month: "short",
       year: "numeric",
     });
+  };
+
+  const handleBackfillVH = async () => {
+    setBackfillLoading(true);
+    setBackfillResult(null);
+    try {
+      const result = await ownerApi.backfillVirtualHandicap();
+      setBackfillResult(result);
+    } catch (error) {
+      console.error("Error backfilling VH:", error);
+      setBackfillResult({ message: "Error", updated: 0, skipped: 0 });
+    } finally {
+      setBackfillLoading(false);
+    }
   };
 
   if (authLoading) {
@@ -273,6 +291,37 @@ export function OwnerPanel() {
               </Card>
             </div>
           )}
+
+          {/* Maintenance Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Mantenimiento</CardTitle>
+              <CardDescription>Acciones de administracion del sistema</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Recalcular Handicap Virtual</p>
+                  <p className="text-sm text-muted-foreground">
+                    Calcula el HV para todas las partidas historicas que no lo tienen
+                  </p>
+                </div>
+                <Button
+                  onClick={handleBackfillVH}
+                  disabled={backfillLoading}
+                  variant="outline"
+                >
+                  {backfillLoading ? "Procesando..." : "Ejecutar"}
+                </Button>
+              </div>
+              {backfillResult && (
+                <div className="p-3 bg-muted rounded-lg text-sm">
+                  <p><strong>Resultado:</strong> {backfillResult.message}</p>
+                  <p>Actualizadas: {backfillResult.updated} | Omitidas: {backfillResult.skipped}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Users Tab */}

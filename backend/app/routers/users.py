@@ -758,3 +758,151 @@ async def get_owner_stats(owner_user: UserResponse = Depends(get_owner_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         )
+
+
+@router.post("/owner/backfill-virtual-handicap")
+async def backfill_virtual_handicap(owner_user: UserResponse = Depends(get_owner_user)):
+    """
+    Backfill virtual_handicap for all historical rounds that don't have it.
+    This calculates HV = Handicap Index - (Stableford Points - 36) for each round.
+    Owner only endpoint.
+    """
+    supabase = get_supabase_admin_client()
+
+    try:
+        # Get all finished rounds without virtual_handicap
+        rounds_response = (
+            supabase.table("rounds")
+            .select("id, course_id, course_length, players")
+            .eq("is_finished", True)
+            .is_("virtual_handicap", "null")
+            .execute()
+        )
+
+        rounds = rounds_response.data or []
+        if not rounds:
+            return {"message": "No rounds to process", "updated": 0, "skipped": 0}
+
+        # Get all courses for holes_data
+        courses_response = supabase.table("courses").select("id, holes_data").execute()
+        courses = {c["id"]: c.get("holes_data", []) for c in (courses_response.data or [])}
+
+        updated = 0
+        skipped = 0
+        errors = []
+
+        for round_data in rounds:
+            round_id = round_data["id"]
+            course_id = round_data.get("course_id")
+            course_length = round_data.get("course_length", "18")
+            players = round_data.get("players", [])
+
+            if not course_id or not players:
+                skipped += 1
+                continue
+
+            holes_data = courses.get(course_id, [])
+            if not holes_data:
+                skipped += 1
+                continue
+
+            # Calculate virtual handicap
+            virtual_handicap = calculate_vh_for_backfill(players, course_length, holes_data)
+
+            if virtual_handicap is not None:
+                try:
+                    supabase.table("rounds").update(
+                        {"virtual_handicap": virtual_handicap}
+                    ).eq("id", round_id).execute()
+                    updated += 1
+                except Exception as e:
+                    errors.append(f"Round {round_id}: {str(e)}")
+            else:
+                skipped += 1
+
+        return {
+            "message": "Backfill completed",
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors[:10] if errors else [],
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+def calculate_vh_for_backfill(players: list, course_length: str, holes_data: list) -> float | None:
+    """Calculate Virtual Handicap for backfill: HV = Handicap Index - (Stableford Points - 36)."""
+    if not players or not holes_data:
+        return None
+
+    user_player = players[0]
+    scores = user_player.get("scores", {})
+    od_handicap_index = user_player.get("od_handicap_index", 0)
+    playing_handicap = user_player.get("playing_handicap", 0)
+
+    if not scores or od_handicap_index is None:
+        return None
+
+    if course_length == "front9":
+        holes_to_count = range(1, 10)
+    elif course_length == "back9":
+        holes_to_count = range(10, 19)
+    else:
+        holes_to_count = range(1, 19)
+
+    holes_lookup = {h.get("number"): h for h in holes_data}
+    total_stableford = 0
+    holes_played = 0
+
+    for hole_num in holes_to_count:
+        hole_num_str = str(hole_num)
+        if hole_num_str not in scores:
+            continue
+
+        score = scores[hole_num_str]
+        strokes = score.get("strokes", 0)
+        if strokes <= 0:
+            continue
+
+        hole_data = holes_lookup.get(hole_num)
+        if not hole_data:
+            continue
+
+        par = hole_data.get("par", 4)
+        hcp_index = hole_data.get("handicap", 1)
+
+        strokes_received = 0
+        if playing_handicap > 0:
+            base_strokes = playing_handicap // 18
+            remainder = playing_handicap % 18
+            strokes_received = base_strokes + (1 if hcp_index <= remainder else 0)
+
+        net_score = strokes - strokes_received
+        diff = net_score - par
+
+        if diff <= -3:
+            points = 5
+        elif diff == -2:
+            points = 4
+        elif diff == -1:
+            points = 3
+        elif diff == 0:
+            points = 2
+        elif diff == 1:
+            points = 1
+        else:
+            points = 0
+
+        total_stableford += points
+        holes_played += 1
+
+    if holes_played == 0:
+        return None
+
+    is_9_hole = course_length in ["front9", "back9"]
+    normalized = total_stableford * 2 if is_9_hole else total_stableford
+    virtual_handicap = od_handicap_index - (normalized - 36)
+    return round(virtual_handicap, 1)

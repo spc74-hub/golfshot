@@ -562,4 +562,11 @@ export const ownerApi = {
     });
     return transformUser(data as Record<string, unknown>);
   },
+
+  // Backfill virtual handicap for all historical rounds (owner only)
+  backfillVirtualHandicap: async (): Promise<{ message: string; updated: number; skipped: number; errors: string[] }> => {
+    return fetchWithAuth("/users/owner/backfill-virtual-handicap", {
+      method: "POST",
+    });
+  },
 };
