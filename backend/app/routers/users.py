@@ -283,8 +283,9 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         strokes_9holes = []
         strokes_18holes = []
         stableford_points_normalized = []  # Normalized to 18-hole equivalent
-        # HVP data: list of (strokes_over_par_normalized, round_date) tuples
-        # HVP = average strokes over par (normalized to 18 holes)
+        # HVP data: list of (hvp_value, round_date) tuples
+        # HVP = Handicap Index - (Stableford Points - 36)
+        # This gives the "demonstrated" handicap regardless of course difficulty
         hvp_data = []
         best_score_18 = None
         best_score_18_info = None
@@ -430,22 +431,28 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 if round_data.get("game_mode") == "stableford":
                     stableford_points_normalized.append(normalized_points)
 
-            # For HVP - calculate strokes over par (normalized to 18 holes)
-            # HVP = average (gross strokes - par), normalized to 18 holes
-            if round_strokes > 0 and round_par > 0:
-                strokes_over_par = round_strokes - round_par
+            # For HVP - calculate using: Handicap Index - (Stableford Points - 36)
+            # This gives the "demonstrated" handicap based on actual performance
+            # normalized to 18 holes (36 points = played to handicap)
+            od_handicap_index = user_player.get("od_handicap_index", 0)
+            if round_stableford > 0 and od_handicap_index is not None:
                 if is_9_hole_round:
-                    # Double to normalize to 18-hole equivalent
-                    strokes_over_par_normalized = strokes_over_par * 2
+                    # Normalize to 18-hole equivalent: double the points
+                    normalized_stableford = round_stableford * 2
                 else:
-                    strokes_over_par_normalized = strokes_over_par
+                    normalized_stableford = round_stableford
+
+                # HVP = Handicap Index - (Points - 36)
+                # If you get 36 points, HVP = your Handicap Index
+                # If you get 40 points (4 over), HVP = Handicap Index - 4
+                hvp_value = od_handicap_index - (normalized_stableford - 36)
 
                 round_date_str = round_data.get("round_date", "")
                 try:
                     round_date_parsed = datetime.strptime(round_date_str, "%Y-%m-%d").date()
                 except (ValueError, TypeError):
                     round_date_parsed = None
-                hvp_data.append((strokes_over_par_normalized, round_date_parsed))
+                hvp_data.append((hvp_value, round_date_parsed))
 
         # Calculate averages
         avg_par3 = sum(par3_strokes) / len(par3_strokes) if par3_strokes else None
@@ -460,8 +467,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         avg_stableford = sum(stableford_points_normalized) / len(stableford_points_normalized) if stableford_points_normalized else None
 
         # Calculate HVP (Handicap Virtual Promedio) for different periods
-        # HVP = average strokes over par (normalized to 18 holes)
-        # Example: if you shoot 86 on a par 72, HVP = 14
+        # HVP = Handicap Index - (Stableford Points - 36)
+        # Example: Handicap Index 14.2, you get 40 points -> HVP = 14.2 - 4 = 10.2
         hvp_total = None
         hvp_month = None
         hvp_quarter = None
@@ -469,20 +476,20 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
 
         if hvp_data:
             # Total (all-time)
-            all_over_par = [p for p, _ in hvp_data]
-            hvp_total = sum(all_over_par) / len(all_over_par)
+            all_hvp_values = [hvp for hvp, _ in hvp_data]
+            hvp_total = sum(all_hvp_values) / len(all_hvp_values)
 
             # Filter by periods
-            month_over_par = [p for p, d in hvp_data if d and d >= current_month_start]
-            quarter_over_par = [p for p, d in hvp_data if d and d >= current_quarter_start]
-            year_over_par = [p for p, d in hvp_data if d and d >= current_year_start]
+            month_hvp = [hvp for hvp, d in hvp_data if d and d >= current_month_start]
+            quarter_hvp = [hvp for hvp, d in hvp_data if d and d >= current_quarter_start]
+            year_hvp = [hvp for hvp, d in hvp_data if d and d >= current_year_start]
 
-            if month_over_par:
-                hvp_month = sum(month_over_par) / len(month_over_par)
-            if quarter_over_par:
-                hvp_quarter = sum(quarter_over_par) / len(quarter_over_par)
-            if year_over_par:
-                hvp_year = sum(year_over_par) / len(year_over_par)
+            if month_hvp:
+                hvp_month = sum(month_hvp) / len(month_hvp)
+            if quarter_hvp:
+                hvp_quarter = sum(quarter_hvp) / len(quarter_hvp)
+            if year_hvp:
+                hvp_year = sum(year_hvp) / len(year_hvp)
 
         return UserStats(
             total_rounds=total_rounds,
