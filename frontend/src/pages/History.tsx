@@ -223,12 +223,66 @@ function getScoreDistributionPct(count: number, total: number): number {
   return total > 0 ? (count / total) * 100 : 0;
 }
 
+// Calculate strokes and stableford for a single round
+function calculateRoundSummary(
+  round: Round,
+  course: Course | undefined
+): { strokes: number; stableford: number } | null {
+  if (!round.isFinished || !course) return null;
+
+  const holesMap = new Map<number, HoleData>(
+    course.holesData.map((h: HoleData) => [h.number, h])
+  );
+
+  let holesToCount: number[];
+  if (round.courseLength === "front9") {
+    holesToCount = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  } else if (round.courseLength === "back9") {
+    holesToCount = [10, 11, 12, 13, 14, 15, 16, 17, 18];
+  } else {
+    holesToCount = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+  }
+
+  const player = round.players[0];
+  if (!player) return null;
+
+  let totalStrokes = 0;
+  let totalStableford = 0;
+
+  for (const holeNum of holesToCount) {
+    const score = player.scores[holeNum];
+    const holeData = holesMap.get(holeNum);
+    if (!score || !holeData) continue;
+
+    const strokes = score.strokes;
+    if (strokes <= 0) continue;
+
+    totalStrokes += strokes;
+
+    const points = calculateStablefordPoints(
+      strokes,
+      holeData.par,
+      player.playingHandicap,
+      holeData.handicap
+    );
+    totalStableford += points;
+  }
+
+  return totalStrokes > 0 ? { strokes: totalStrokes, stableford: totalStableford } : null;
+}
+
 export function History() {
   const { data: rounds, isLoading } = useRounds();
   const { data: courses } = useCourses();
   const deleteRound = useDeleteRound();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+
+  // Create courses map for quick lookup
+  const coursesMap = useMemo(() => {
+    if (!courses) return new Map<string, Course>();
+    return new Map(courses.map(c => [c.id, c]));
+  }, [courses]);
 
   // Group rounds by month
   const monthGroups = useMemo(() => {
@@ -466,7 +520,9 @@ export function History() {
 
                   {/* Individual Rounds */}
                   <CardContent className="pt-4 space-y-3">
-                    {group.rounds.map((round) => (
+                    {group.rounds.map((round) => {
+                      const summary = calculateRoundSummary(round, coursesMap.get(round.courseId));
+                      return (
                       <div
                         key={round.id}
                         className="flex items-center justify-between p-3 bg-muted/30 rounded-lg"
@@ -483,6 +539,16 @@ export function History() {
                             {round.isFinished ? (
                               <>
                                 <Badge className="text-xs">Finalizada</Badge>
+                                {summary && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {summary.strokes} golpes
+                                  </Badge>
+                                )}
+                                {summary && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {summary.stableford} pts
+                                  </Badge>
+                                )}
                                 {round.virtualHandicap != null && (
                                   <Badge variant="outline" className="text-xs">
                                     HV: {round.virtualHandicap.toFixed(1)}
@@ -565,7 +631,8 @@ export function History() {
                           </Dialog>
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                   </CardContent>
                 </CollapsibleContent>
               </Card>
