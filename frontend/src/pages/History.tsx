@@ -73,7 +73,14 @@ export function History() {
                       </Badge>
                     )}
                     {round.isFinished ? (
-                      <Badge>Finalizada</Badge>
+                      <>
+                        <Badge>Finalizada</Badge>
+                        {round.virtualHandicap != null && (
+                          <Badge variant="outline" className="text-xs">
+                            HV: {round.virtualHandicap.toFixed(1)}
+                          </Badge>
+                        )}
+                      </>
                     ) : (
                       <Badge variant="secondary">
                         <Play className="h-3 w-3 mr-1" />

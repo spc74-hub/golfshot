@@ -85,6 +85,8 @@ function transformRound(backendRound: Record<string, unknown>): Round {
     currentHole: (backendRound.current_hole ?? backendRound.currentHole) as number,
     completedHoles: (backendRound.completed_holes ?? backendRound.completedHoles) as number[],
     players: ((backendRound.players || []) as Record<string, unknown>[]).map(transformPlayer),
+    // Virtual Handicap for this round
+    virtualHandicap: (backendRound.virtual_handicap ?? backendRound.virtualHandicap) as number | null | undefined,
     // Shared round fields
     shareCode: (backendRound.share_code ?? backendRound.shareCode) as string | null | undefined,
     collaborators: (backendRound.collaborators ?? []) as string[],

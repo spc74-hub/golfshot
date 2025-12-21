@@ -93,6 +93,9 @@ export interface Round {
   currentHole: number;
   completedHoles: number[];
   players: Player[];
+  // Virtual Handicap for this round (calculated from Stableford points)
+  // HV = Handicap Index - (Stableford Points - 36) for 18 holes
+  virtualHandicap?: number | null;
   // Shared round fields
   shareCode?: string | null;
   collaborators?: string[];

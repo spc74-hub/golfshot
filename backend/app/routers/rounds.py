@@ -24,6 +24,105 @@ def generate_share_code() -> str:
     return "".join(random.choice(chars) for _ in range(6))
 
 
+def calculate_virtual_handicap(
+    players: list,
+    course_length: str,
+    holes_data: list,
+) -> float | None:
+    """
+    Calculate Virtual Handicap for the first player in the round.
+    HV = Handicap Index - (Stableford Points - 36) for 18 holes.
+
+    Returns None if calculation cannot be performed.
+    """
+    if not players or not holes_data:
+        return None
+
+    # Get first player (the main player whose stats we track)
+    user_player = players[0]
+    scores = user_player.get("scores", {})
+    od_handicap_index = user_player.get("od_handicap_index", 0)
+    playing_handicap = user_player.get("playing_handicap", 0)
+
+    if not scores or od_handicap_index is None:
+        return None
+
+    # Determine which holes to count based on course_length
+    if course_length == "front9":
+        holes_to_count = range(1, 10)
+    elif course_length == "back9":
+        holes_to_count = range(10, 19)
+    else:  # "18"
+        holes_to_count = range(1, 19)
+
+    # Create holes lookup
+    holes_lookup = {h.get("number"): h for h in holes_data}
+
+    # Calculate Stableford points
+    total_stableford = 0
+    holes_played = 0
+
+    for hole_num in holes_to_count:
+        hole_num_str = str(hole_num)
+        if hole_num_str not in scores:
+            continue
+
+        score = scores[hole_num_str]
+        strokes = score.get("strokes", 0)
+        if strokes <= 0:
+            continue
+
+        hole_data = holes_lookup.get(hole_num)
+        if not hole_data:
+            continue
+
+        par = hole_data.get("par", 4)
+        handicap_index = hole_data.get("handicap", 1)
+
+        # Calculate strokes received on this hole
+        strokes_received = 0
+        if playing_handicap > 0:
+            base_strokes = playing_handicap // 18
+            remainder = playing_handicap % 18
+            strokes_received = base_strokes + (1 if handicap_index <= remainder else 0)
+
+        # Calculate net score and Stableford points
+        net_score = strokes - strokes_received
+        diff = net_score - par
+
+        if diff <= -3:
+            points = 5
+        elif diff == -2:
+            points = 4
+        elif diff == -1:
+            points = 3
+        elif diff == 0:
+            points = 2
+        elif diff == 1:
+            points = 1
+        else:
+            points = 0
+
+        total_stableford += points
+        holes_played += 1
+
+    # Need at least some holes played
+    if holes_played == 0:
+        return None
+
+    # Normalize to 18-hole equivalent
+    is_9_hole_round = course_length in ["front9", "back9"]
+    if is_9_hole_round:
+        normalized_stableford = total_stableford * 2
+    else:
+        normalized_stableford = total_stableford
+
+    # HV = Handicap Index - (Stableford Points - 36)
+    virtual_handicap = od_handicap_index - (normalized_stableford - 36)
+
+    return round(virtual_handicap, 1)
+
+
 @router.get("/", response_model=list[RoundResponse])
 async def list_rounds(current_user: UserResponse = Depends(get_current_user)):
     """List all rounds for the current user (owned and shared)."""
@@ -221,10 +320,10 @@ async def update_round(
     supabase = get_supabase_client()
 
     try:
-        # Check ownership or collaboration
+        # Check ownership or collaboration - also get course_id and course_length for HV calculation
         existing = (
             supabase.table("rounds")
-            .select("user_id, collaborators, share_code")
+            .select("user_id, collaborators, share_code, course_id, course_length")
             .eq("id", round_id)
             .single()
             .execute()
@@ -257,7 +356,20 @@ async def update_round(
             update_data["completed_holes"] = round_update.completed_holes
 
         if round_update.players is not None:
-            update_data["players"] = [p.model_dump() for p in round_update.players]
+            players_data = [p.model_dump() for p in round_update.players]
+            update_data["players"] = players_data
+
+            # Calculate and store Virtual Handicap when players/scores are updated
+            course_id = existing.data.get("course_id")
+            course_length = existing.data.get("course_length", "18")
+            if course_id:
+                # Get course holes_data for HV calculation
+                course_response = supabase.table("courses").select("holes_data").eq("id", course_id).single().execute()
+                if course_response.data and course_response.data.get("holes_data"):
+                    holes_data = course_response.data["holes_data"]
+                    virtual_handicap = calculate_virtual_handicap(players_data, course_length, holes_data)
+                    if virtual_handicap is not None:
+                        update_data["virtual_handicap"] = virtual_handicap
 
         if round_update.is_finished is not None:
             update_data["is_finished"] = round_update.is_finished
@@ -590,6 +702,10 @@ async def save_imported_round(
         # Use course_length from import data, or determine from num_holes
         course_length = import_data.get("course_length", "18" if num_holes == 18 else "front9")
 
+        # Calculate Virtual Handicap for this imported round
+        course_holes_data = course.get("holes_data", []) if course else holes_data
+        virtual_handicap = calculate_virtual_handicap([player], course_length, course_holes_data)
+
         # Create the imported round
         new_round = {
             "user_id": current_user.id,
@@ -611,6 +727,7 @@ async def save_imported_round(
             "players": [player],
             "is_finished": True,
             "is_imported": True,
+            "virtual_handicap": virtual_handicap,
         }
 
         response = supabase.table("rounds").insert(new_round).execute()

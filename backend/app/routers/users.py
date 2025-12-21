@@ -284,8 +284,8 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         strokes_18holes = []
         stableford_points_normalized = []  # Normalized to 18-hole equivalent
         # HVP data: list of (hvp_value, round_date) tuples
-        # HVP = Handicap Index - (Stableford Points - 36)
-        # This gives the "demonstrated" handicap regardless of course difficulty
+        # Uses stored virtual_handicap from each round (or calculates for legacy rounds)
+        # HV = Handicap Index - (Stableford Points - 36) for 18 holes
         hvp_data = []
         best_score_18 = None
         best_score_18_info = None
@@ -431,22 +431,26 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
                 if round_data.get("game_mode") == "stableford":
                     stableford_points_normalized.append(normalized_points)
 
-            # For HVP - calculate using: Handicap Index - (Stableford Points - 36)
-            # This gives the "demonstrated" handicap based on actual performance
-            # normalized to 18 holes (36 points = played to handicap)
-            od_handicap_index = user_player.get("od_handicap_index", 0)
-            if round_stableford > 0 and od_handicap_index is not None:
-                if is_9_hole_round:
-                    # Normalize to 18-hole equivalent: double the points
-                    normalized_stableford = round_stableford * 2
+            # For HVP - use stored virtual_handicap if available, otherwise calculate
+            # HV = Handicap Index - (Stableford Points - 36) for 18 holes
+            stored_vh = round_data.get("virtual_handicap")
+            if stored_vh is not None:
+                hvp_value = stored_vh
+            elif round_stableford > 0:
+                # Fallback: calculate from Stableford points for legacy rounds
+                od_handicap_index = user_player.get("od_handicap_index", 0)
+                if od_handicap_index is not None:
+                    if is_9_hole_round:
+                        normalized_stableford = round_stableford * 2
+                    else:
+                        normalized_stableford = round_stableford
+                    hvp_value = od_handicap_index - (normalized_stableford - 36)
                 else:
-                    normalized_stableford = round_stableford
+                    hvp_value = None
+            else:
+                hvp_value = None
 
-                # HVP = Handicap Index - (Points - 36)
-                # If you get 36 points, HVP = your Handicap Index
-                # If you get 40 points (4 over), HVP = Handicap Index - 4
-                hvp_value = od_handicap_index - (normalized_stableford - 36)
-
+            if hvp_value is not None:
                 round_date_str = round_data.get("round_date", "")
                 try:
                     round_date_parsed = datetime.strptime(round_date_str, "%Y-%m-%d").date()

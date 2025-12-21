@@ -190,6 +190,9 @@ class RoundResponse(BaseModel):
     current_hole: int
     completed_holes: list[int]
     players: list[PlayerResponse]
+    # Virtual Handicap for this round (calculated from Stableford points)
+    # HV = Handicap Index - (Stableford Points - 36) for 18 holes
+    virtual_handicap: Optional[float] = None
     # Shared round fields
     share_code: Optional[str] = None
     collaborators: list[str] = []

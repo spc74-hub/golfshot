@@ -247,6 +247,11 @@ export function RoundCard() {
             ) : (
               <Badge variant="secondary">En curso - Hoyo {round.currentHole}</Badge>
             )}
+            {round.isFinished && round.virtualHandicap != null && (
+              <Badge variant="outline" className="ml-2">
+                HV: {round.virtualHandicap.toFixed(1)}
+              </Badge>
+            )}
           </div>
         </div>
         {!round.isFinished && (
