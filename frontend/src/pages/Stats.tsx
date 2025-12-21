@@ -504,6 +504,166 @@ export function Stats() {
         </Card>
       </div>
 
+      {/* Score Distribution & GIR */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Score Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Distribucion de Resultados</CardTitle>
+            <CardDescription>Porcentaje de cada tipo de resultado</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {stats.parsPct !== null ? (
+              <div className="space-y-2">
+                {/* Eagles or better */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                    <span className="text-sm">Eagle o mejor</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-yellow-500"
+                        style={{ width: `${stats.eaglesOrBetterPct ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium w-12 text-right">
+                      {stats.eaglesOrBetterPct?.toFixed(1) ?? "0"}%
+                    </span>
+                  </div>
+                </div>
+                {/* Birdies */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-green-500" />
+                    <span className="text-sm">Birdie</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-green-500"
+                        style={{ width: `${stats.birdiesPct ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium w-12 text-right">
+                      {stats.birdiesPct?.toFixed(1) ?? "0"}%
+                    </span>
+                  </div>
+                </div>
+                {/* Pars */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-blue-500" />
+                    <span className="text-sm">Par</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500"
+                        style={{ width: `${stats.parsPct ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium w-12 text-right">
+                      {stats.parsPct?.toFixed(1) ?? "0"}%
+                    </span>
+                  </div>
+                </div>
+                {/* Bogeys */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-orange-500" />
+                    <span className="text-sm">Bogey</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-orange-500"
+                        style={{ width: `${stats.bogeysPct ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium w-12 text-right">
+                      {stats.bogeysPct?.toFixed(1) ?? "0"}%
+                    </span>
+                  </div>
+                </div>
+                {/* Double Bogeys */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500" />
+                    <span className="text-sm">Doble Bogey</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-red-500"
+                        style={{ width: `${stats.doubleBogeysPct ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium w-12 text-right">
+                      {stats.doubleBogeysPct?.toFixed(1) ?? "0"}%
+                    </span>
+                  </div>
+                </div>
+                {/* Triple or worse */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-800" />
+                    <span className="text-sm">Triple+ Bogey</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-red-800"
+                        style={{ width: `${stats.tripleOrWorsePct ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium w-12 text-right">
+                      {stats.tripleOrWorsePct?.toFixed(1) ?? "0"}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No hay datos disponibles</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* GIR */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">GIR (Green in Regulation)</CardTitle>
+            <CardDescription>Llegar al green en regulacion</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {stats.girPct !== null ? (
+              <div className="space-y-4">
+                <div className="text-center">
+                  <div className="text-4xl font-bold text-primary">
+                    {stats.girPct.toFixed(1)}%
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    de los hoyos en regulacion
+                  </p>
+                </div>
+                <div className="w-full h-4 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-green-500 transition-all"
+                    style={{ width: `${stats.girPct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  GIR = llegar al green en Par-2 golpes o menos
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No hay datos disponibles</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Putting Averages by Round Length */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* 9 Holes Putts */}

@@ -212,6 +212,15 @@ export const usersApi = {
       bestRound9Score: data.best_round_9_score,
       bestRound9Date: data.best_round_9_date,
       bestRound9Course: data.best_round_9_course,
+      // Score distribution percentages
+      eaglesOrBetterPct: data.eagles_or_better_pct,
+      birdiesPct: data.birdies_pct,
+      parsPct: data.pars_pct,
+      bogeysPct: data.bogeys_pct,
+      doubleBogeysPct: data.double_bogeys_pct,
+      tripleOrWorsePct: data.triple_or_worse_pct,
+      // GIR percentage
+      girPct: data.gir_pct,
     };
   },
 };

@@ -291,6 +291,17 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         best_score_18_info = None
         best_score_9 = None
         best_score_9_info = None
+        # Score distribution counters (gross score vs par)
+        eagles_or_better = 0
+        birdies = 0
+        pars = 0
+        bogeys = 0
+        double_bogeys = 0
+        triple_or_worse = 0
+        total_holes_for_distribution = 0
+        # GIR tracking
+        gir_hit = 0
+        gir_total = 0
 
         # Get current date info for period filtering
         today = date.today()
@@ -362,6 +373,31 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
 
                 round_strokes += strokes
                 round_putts += putts
+
+                # Track score distribution (gross score vs par)
+                gross_diff = strokes - par
+                total_holes_for_distribution += 1
+                if gross_diff <= -2:
+                    eagles_or_better += 1
+                elif gross_diff == -1:
+                    birdies += 1
+                elif gross_diff == 0:
+                    pars += 1
+                elif gross_diff == 1:
+                    bogeys += 1
+                elif gross_diff == 2:
+                    double_bogeys += 1
+                else:
+                    triple_or_worse += 1
+
+                # Track GIR (Green in Regulation)
+                # GIR = reaching the green in (par - 2) strokes or less
+                if putts > 0:  # Only count if putts were recorded
+                    strokes_to_green = strokes - putts
+                    target_strokes = par - 2
+                    gir_total += 1
+                    if strokes_to_green <= target_strokes:
+                        gir_hit += 1
 
                 # Calculate stableford points
                 playing_hcp = user_player.get("playing_handicap", 0)
@@ -495,6 +531,24 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
             if year_hvp:
                 hvp_year = sum(year_hvp) / len(year_hvp)
 
+        # Calculate score distribution percentages
+        eagles_pct = None
+        birdies_pct = None
+        pars_pct = None
+        bogeys_pct = None
+        double_bogeys_pct = None
+        triple_or_worse_pct = None
+        if total_holes_for_distribution > 0:
+            eagles_pct = round((eagles_or_better / total_holes_for_distribution) * 100, 1)
+            birdies_pct = round((birdies / total_holes_for_distribution) * 100, 1)
+            pars_pct = round((pars / total_holes_for_distribution) * 100, 1)
+            bogeys_pct = round((bogeys / total_holes_for_distribution) * 100, 1)
+            double_bogeys_pct = round((double_bogeys / total_holes_for_distribution) * 100, 1)
+            triple_or_worse_pct = round((triple_or_worse / total_holes_for_distribution) * 100, 1)
+
+        # Calculate GIR percentage
+        gir_pct = round((gir_hit / gir_total) * 100, 1) if gir_total > 0 else None
+
         return UserStats(
             total_rounds=total_rounds,
             user_handicap_index=user_handicap_index,
@@ -520,6 +574,15 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
             best_round_9_score=best_score_9_info["score"] if best_score_9_info else None,
             best_round_9_date=best_score_9_info["date"] if best_score_9_info else None,
             best_round_9_course=best_score_9_info["course"] if best_score_9_info else None,
+            # Score distribution percentages
+            eagles_or_better_pct=eagles_pct,
+            birdies_pct=birdies_pct,
+            pars_pct=pars_pct,
+            bogeys_pct=bogeys_pct,
+            double_bogeys_pct=double_bogeys_pct,
+            triple_or_worse_pct=triple_or_worse_pct,
+            # GIR percentage
+            gir_pct=gir_pct,
         )
     except HTTPException:
         raise

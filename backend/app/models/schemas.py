@@ -269,3 +269,12 @@ class UserStats(BaseModel):
     best_round_9_score: Optional[int] = None
     best_round_9_date: Optional[str] = None
     best_round_9_course: Optional[str] = None
+    # Score distribution (percentage of each result type)
+    eagles_or_better_pct: Optional[float] = None
+    birdies_pct: Optional[float] = None
+    pars_pct: Optional[float] = None
+    bogeys_pct: Optional[float] = None
+    double_bogeys_pct: Optional[float] = None
+    triple_or_worse_pct: Optional[float] = None
+    # GIR (Green in Regulation) percentage
+    gir_pct: Optional[float] = None

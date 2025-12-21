@@ -211,6 +211,15 @@ export interface UserStats {
   bestRound9Score: number | null;
   bestRound9Date: string | null;
   bestRound9Course: string | null;
+  // Score distribution (percentage of each result type)
+  eaglesOrBetterPct: number | null;
+  birdiesPct: number | null;
+  parsPct: number | null;
+  bogeysPct: number | null;
+  doubleBogeysPct: number | null;
+  tripleOrWorsePct: number | null;
+  // GIR (Green in Regulation) percentage
+  girPct: number | null;
 }
 
 export interface ScoreDistribution {
