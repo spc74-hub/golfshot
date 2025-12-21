@@ -61,7 +61,8 @@ function calculateStablefordPoints(
 interface MonthStats {
   roundsPlayed: number;
   hvpAvg: number | null;
-  avgStrokes: number | null;
+  avgStrokes9: number | null;
+  avgStrokes18: number | null;
   avgStrokesPar3: number | null;
   avgStrokesPar4: number | null;
   avgStrokesPar5: number | null;
@@ -89,7 +90,8 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
   const coursesMap = new Map(courses.map(c => [c.id, c]));
 
   let hvpValues: number[] = [];
-  let strokesValues: number[] = [];
+  let strokes9Values: number[] = [];
+  let strokes18Values: number[] = [];
   let par3Strokes: number[] = [];
   let par4Strokes: number[] = [];
   let par5Strokes: number[] = [];
@@ -171,7 +173,13 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
     }
 
     if (holesPlayed > 0) {
-      strokesValues.push(roundStrokes);
+      // Separate strokes by round type
+      const is9Hole = round.courseLength !== "18";
+      if (is9Hole) {
+        strokes9Values.push(roundStrokes);
+      } else {
+        strokes18Values.push(roundStrokes);
+      }
       if (roundPutts > 0) puttsValues.push(roundPutts);
     }
 
@@ -192,7 +200,8 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
   return {
     roundsPlayed: finishedRounds,
     hvpAvg: hvpValues.length > 0 ? hvpValues.reduce((a, b) => a + b, 0) / hvpValues.length : null,
-    avgStrokes: strokesValues.length > 0 ? strokesValues.reduce((a, b) => a + b, 0) / strokesValues.length : null,
+    avgStrokes9: strokes9Values.length > 0 ? strokes9Values.reduce((a, b) => a + b, 0) / strokes9Values.length : null,
+    avgStrokes18: strokes18Values.length > 0 ? strokes18Values.reduce((a, b) => a + b, 0) / strokes18Values.length : null,
     avgStrokesPar3: par3Strokes.length > 0 ? par3Strokes.reduce((a, b) => a + b, 0) / par3Strokes.length : null,
     avgStrokesPar4: par4Strokes.length > 0 ? par4Strokes.reduce((a, b) => a + b, 0) / par4Strokes.length : null,
     avgStrokesPar5: par5Strokes.length > 0 ? par5Strokes.reduce((a, b) => a + b, 0) / par5Strokes.length : null,
@@ -338,10 +347,15 @@ export function History() {
                               <span className="font-medium">HVP: {group.stats.hvpAvg.toFixed(1)}</span>
                             </div>
                           )}
-                          {group.stats.avgStrokes !== null && (
-                            <div className="hidden sm:flex items-center gap-1">
+                          {(group.stats.avgStrokes18 !== null || group.stats.avgStrokes9 !== null) && (
+                            <div className="hidden sm:flex items-center gap-2">
                               <Flag className="h-4 w-4 text-muted-foreground" />
-                              <span>{group.stats.avgStrokes.toFixed(0)} golpes</span>
+                              {group.stats.avgStrokes18 !== null && (
+                                <span>{group.stats.avgStrokes18.toFixed(0)} (18h)</span>
+                              )}
+                              {group.stats.avgStrokes9 !== null && (
+                                <span>{group.stats.avgStrokes9.toFixed(0)} (9h)</span>
+                              )}
                             </div>
                           )}
                           {group.stats.girPct !== null && (
@@ -360,7 +374,7 @@ export function History() {
                   {/* Monthly Stats Summary */}
                   {group.stats.roundsPlayed > 0 && (
                     <CardContent className="pt-0 pb-4 border-b">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
                         {/* HVP */}
                         <div className="text-center p-2 bg-muted/50 rounded-lg">
                           <div className="text-lg font-bold text-primary">
@@ -368,12 +382,19 @@ export function History() {
                           </div>
                           <div className="text-xs text-muted-foreground">HVP</div>
                         </div>
-                        {/* Avg Strokes */}
+                        {/* Avg Strokes 18h */}
                         <div className="text-center p-2 bg-muted/50 rounded-lg">
                           <div className="text-lg font-bold">
-                            {group.stats.avgStrokes?.toFixed(0) ?? "N/A"}
+                            {group.stats.avgStrokes18?.toFixed(0) ?? "-"}
                           </div>
-                          <div className="text-xs text-muted-foreground">Golpes</div>
+                          <div className="text-xs text-muted-foreground">Golpes 18h</div>
+                        </div>
+                        {/* Avg Strokes 9h */}
+                        <div className="text-center p-2 bg-muted/50 rounded-lg">
+                          <div className="text-lg font-bold">
+                            {group.stats.avgStrokes9?.toFixed(0) ?? "-"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Golpes 9h</div>
                         </div>
                         {/* Par 3 */}
                         <div className="text-center p-2 bg-muted/50 rounded-lg">
