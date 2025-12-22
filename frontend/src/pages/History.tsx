@@ -549,6 +549,11 @@ export function History() {
                                     {summary.stableford} pts
                                   </Badge>
                                 )}
+                                {round.players[0]?.playingHandicap != null && (
+                                  <Badge variant="outline" className="text-xs">
+                                    HDJ: {round.players[0].playingHandicap}
+                                  </Badge>
+                                )}
                                 {round.virtualHandicap != null && (
                                   <Badge variant="outline" className="text-xs">
                                     HV: {round.virtualHandicap.toFixed(1)}
