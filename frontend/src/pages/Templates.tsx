@@ -327,16 +327,16 @@ export function Templates() {
             <div className="space-y-2">
               <Label>Campo (opcional)</Label>
               <Select
-                value={formData.courseId}
+                value={formData.courseId || "__none__"}
                 onValueChange={(value) =>
-                  setFormData({ ...formData, courseId: value })
+                  setFormData({ ...formData, courseId: value === "__none__" ? "" : value })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar campo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin campo predefinido</SelectItem>
+                  <SelectItem value="__none__">Sin campo predefinido</SelectItem>
                   {courses?.map((course) => (
                     <SelectItem key={course.id} value={course.id}>
                       {course.name}
@@ -349,16 +349,16 @@ export function Templates() {
             <div className="space-y-2">
               <Label>Hoyos</Label>
               <Select
-                value={formData.courseLength}
+                value={formData.courseLength || "__none__"}
                 onValueChange={(value) =>
-                  setFormData({ ...formData, courseLength: value as CourseLength | "" })
+                  setFormData({ ...formData, courseLength: value === "__none__" ? "" : value as CourseLength })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin definir</SelectItem>
+                  <SelectItem value="__none__">Sin definir</SelectItem>
                   <SelectItem value="18">18 hoyos</SelectItem>
                   <SelectItem value="front9">Primeros 9</SelectItem>
                   <SelectItem value="back9">Ultimos 9</SelectItem>
@@ -476,16 +476,16 @@ export function Templates() {
               <div className="space-y-2">
                 <Label>Tee predeterminado</Label>
                 <Select
-                  value={formData.defaultTee}
+                  value={formData.defaultTee || "__none__"}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, defaultTee: value })
+                    setFormData({ ...formData, defaultTee: value === "__none__" ? "" : value })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar tee" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin definir</SelectItem>
+                    <SelectItem value="__none__">Sin definir</SelectItem>
                     {selectedCourse.tees.map((tee) => (
                       <SelectItem key={tee.name} value={tee.name}>
                         {tee.name}
