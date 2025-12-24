@@ -22,7 +22,6 @@ import {
 import { format, parseISO, subMonths, subYears, isAfter } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -30,6 +29,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  ComposedChart,
 } from "recharts";
 
 type TimeRange = "3m" | "6m" | "1y" | "all";
@@ -125,7 +125,7 @@ export function Stats() {
         break;
     }
 
-    return rounds
+    const filteredRounds = rounds
       .filter((r) => {
         if (!r.isFinished || r.virtualHandicap == null) return false;
         if (!cutoffDate) return true;
@@ -141,11 +141,23 @@ export function Stats() {
         return {
           date: r.roundDate,
           dateLabel: format(date, "d MMM", { locale: es }),
-          hv: r.virtualHandicap,
+          hv: r.virtualHandicap as number,
           course: r.courseName,
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Add color indicators for dots
+    return filteredRounds.map((point, index) => {
+      const prevHv = index > 0 ? filteredRounds[index - 1].hv : point.hv;
+      const improving = point.hv < prevHv; // Lower HV = better
+      const worsening = point.hv > prevHv;
+      return {
+        ...point,
+        improving,
+        worsening,
+      };
+    });
   }, [rounds, timeRange]);
 
   if (isLoading) {
@@ -383,7 +395,7 @@ export function Stats() {
           <CardContent>
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="dateLabel"
@@ -402,11 +414,16 @@ export function Stats() {
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
                         const data = payload[0].payload;
+                        const color = data.improving ? "#22c55e" : data.worsening ? "#ef4444" : "#6b7280";
                         return (
                           <div className="bg-background border rounded-lg shadow-lg p-3">
                             <p className="font-medium">{data.course}</p>
                             <p className="text-sm text-muted-foreground">{data.dateLabel}</p>
-                            <p className="text-lg font-bold text-primary">HV: {data.hv?.toFixed(1)}</p>
+                            <p className="text-lg font-bold" style={{ color }}>
+                              HV: {data.hv?.toFixed(1)}
+                              {data.improving && " ↓"}
+                              {data.worsening && " ↑"}
+                            </p>
                           </div>
                         );
                       }
@@ -427,20 +444,53 @@ export function Stats() {
                       }}
                     />
                   )}
+                  {/* Base gray line */}
                   <Line
                     type="monotone"
                     dataKey="hv"
-                    stroke="hsl(var(--primary))"
+                    stroke="#d1d5db"
                     strokeWidth={2}
-                    dot={{ fill: "hsl(var(--primary))", strokeWidth: 0, r: 4 }}
-                    activeDot={{ r: 6, strokeWidth: 0 }}
+                    dot={false}
+                    isAnimationActive={false}
                   />
-                </LineChart>
+                  {/* Colored dots on top */}
+                  <Line
+                    type="monotone"
+                    dataKey="hv"
+                    stroke="transparent"
+                    strokeWidth={0}
+                    dot={(props: { cx?: number; cy?: number; payload?: { improving: boolean; worsening: boolean } }) => {
+                      const { cx, cy, payload } = props;
+                      if (cx === undefined || cy === undefined || !payload) return null;
+                      const color = payload.improving ? "#22c55e" : payload.worsening ? "#ef4444" : "#6b7280";
+                      return (
+                        <circle
+                          key={`dot-${cx}-${cy}`}
+                          cx={cx}
+                          cy={cy}
+                          r={6}
+                          fill={color}
+                          stroke="white"
+                          strokeWidth={2}
+                        />
+                      );
+                    }}
+                    activeDot={{ r: 8, strokeWidth: 2, stroke: "white" }}
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
-            <p className="text-xs text-muted-foreground text-center mt-3">
-              Linea punteada = tu Handicap Index oficial · Valores mas bajos = mejor rendimiento
-            </p>
+            <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground mt-3">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded-full bg-green-500"></span>
+                Mejora
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded-full bg-red-500"></span>
+                Empeora
+              </span>
+              <span>Linea punteada = Handicap Index</span>
+            </div>
           </CardContent>
         </Card>
       )}
