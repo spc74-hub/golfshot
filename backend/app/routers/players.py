@@ -13,17 +13,27 @@ router = APIRouter(prefix="/players", tags=["players"])
 
 @router.get("/", response_model=list[SavedPlayerResponse])
 async def list_players(current_user: UserResponse = Depends(get_current_user)):
-    """List all saved players for the current user."""
+    """List all saved players for the current user. Owner sees all players."""
     supabase = get_supabase_client()
 
     try:
-        response = (
-            supabase.table("saved_players")
-            .select("*")
-            .eq("user_id", current_user.id)
-            .order("name")
-            .execute()
-        )
+        # Owner sees all players from all users
+        if current_user.role == "owner":
+            response = (
+                supabase.table("saved_players")
+                .select("*")
+                .order("name")
+                .execute()
+            )
+        else:
+            # Regular users only see their own players
+            response = (
+                supabase.table("saved_players")
+                .select("*")
+                .eq("user_id", current_user.id)
+                .order("name")
+                .execute()
+            )
         return response.data or []
     except Exception as e:
         raise HTTPException(
@@ -41,14 +51,24 @@ async def get_player(
     supabase = get_supabase_client()
 
     try:
-        response = (
-            supabase.table("saved_players")
-            .select("*")
-            .eq("id", player_id)
-            .eq("user_id", current_user.id)
-            .single()
-            .execute()
-        )
+        # Owner can see any player
+        if current_user.role == "owner":
+            response = (
+                supabase.table("saved_players")
+                .select("*")
+                .eq("id", player_id)
+                .single()
+                .execute()
+            )
+        else:
+            response = (
+                supabase.table("saved_players")
+                .select("*")
+                .eq("id", player_id)
+                .eq("user_id", current_user.id)
+                .single()
+                .execute()
+            )
 
         if not response.data:
             raise HTTPException(
@@ -125,7 +145,8 @@ async def update_player(
                 detail="Player not found",
             )
 
-        if existing.data["user_id"] != current_user.id:
+        # Owner can edit any player, others can only edit their own
+        if existing.data["user_id"] != current_user.id and current_user.role != "owner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied",
@@ -187,7 +208,8 @@ async def delete_player(
                 detail="Player not found",
             )
 
-        if existing.data["user_id"] != current_user.id:
+        # Owner can delete any player, others can only delete their own
+        if existing.data["user_id"] != current_user.id and current_user.role != "owner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied",
