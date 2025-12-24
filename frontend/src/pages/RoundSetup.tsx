@@ -26,6 +26,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import {
   Dialog,
   DialogContent,
@@ -893,31 +894,11 @@ export function RoundSetup() {
 
                     <div className="space-y-1">
                       <Label className="text-xs">Handicap Index</Label>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={player.odHandicapIndex === 0 ? "" : String(player.odHandicapIndex).replace(".", ",")}
-                        onChange={(e) => {
-                          const rawValue = e.target.value;
-                          // Allow empty, digits, and one decimal separator
-                          if (rawValue === "" || /^[0-9]*[.,]?[0-9]*$/.test(rawValue)) {
-                            const normalized = rawValue.replace(",", ".");
-                            if (normalized === "" || normalized === ".") {
-                              updatePlayer(player.tempId, "odHandicapIndex", 0);
-                            } else {
-                              const num = parseFloat(normalized);
-                              if (!isNaN(num) && num >= 0 && num <= 54) {
-                                updatePlayer(player.tempId, "odHandicapIndex", num);
-                              }
-                            }
-                          }
-                        }}
-                        onBlur={(e) => {
-                          const value = e.target.value.replace(",", ".");
-                          if (value === "" || value === ".") {
-                            updatePlayer(player.tempId, "odHandicapIndex", 0);
-                          }
-                        }}
+                      <DecimalInput
+                        value={player.odHandicapIndex}
+                        onChange={(value) => updatePlayer(player.tempId, "odHandicapIndex", value)}
+                        min={0}
+                        max={54}
                         placeholder="0,0"
                       />
                     </div>

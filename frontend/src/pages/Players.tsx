@@ -204,12 +204,13 @@ export function Players() {
                 inputMode="decimal"
                 value={formData.handicapIndex}
                 onChange={(e) => {
-                  const value = e.target.value.replace(",", ".");
-                  if (value === "" || /^\d*\.?\d*$/.test(value)) {
+                  const value = e.target.value;
+                  // Allow both comma and dot as decimal separator
+                  if (value === "" || /^[0-9]*[.,]?[0-9]*$/.test(value)) {
                     setFormData({ ...formData, handicapIndex: value });
                   }
                 }}
-                placeholder="24.0"
+                placeholder="24,0"
               />
             </div>
 
