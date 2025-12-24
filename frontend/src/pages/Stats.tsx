@@ -407,7 +407,8 @@ export function Stats() {
                     tick={{ fontSize: 12 }}
                     tickLine={false}
                     axisLine={false}
-                    domain={["dataMin - 2", "dataMax + 2"]}
+                    domain={[(dataMin: number) => Math.floor(dataMin - 2), (dataMax: number) => Math.ceil(dataMax + 2)]}
+                    tickFormatter={(value: number) => value.toFixed(0)}
                     reversed
                   />
                   <Tooltip
