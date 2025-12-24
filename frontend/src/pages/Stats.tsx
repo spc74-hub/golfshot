@@ -138,11 +138,16 @@ export function Stats() {
       })
       .map((r) => {
         const date = parseISO(r.roundDate);
+        // Calculate total strokes from first player's scores
+        const scores = r.players[0]?.scores || {};
+        const totalStrokes = Object.values(scores).reduce((sum, s) => sum + (s.strokes || 0), 0);
         return {
           date: r.roundDate,
           dateLabel: format(date, "d MMM", { locale: es }),
           hv: r.virtualHandicap as number,
           course: r.courseName,
+          strokes: totalStrokes,
+          holes: r.courseLength === "18" ? 18 : 9,
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -416,6 +421,9 @@ export function Stats() {
                             <p className="text-lg font-bold" style={{ color }}>
                               HV: {data.hv?.toFixed(1)}
                             </p>
+                            <p className="text-sm text-muted-foreground">
+                              {data.strokes} golpes ({data.holes}h)
+                            </p>
                           </div>
                         );
                       }
@@ -451,7 +459,7 @@ export function Stats() {
                     dataKey="hv"
                     stroke="transparent"
                     strokeWidth={0}
-                    dot={(props: { cx?: number; cy?: number; payload?: { hv: number } }) => {
+                    dot={(props: { cx?: number; cy?: number; payload?: { hv: number; strokes: number; holes: number } }) => {
                       const { cx, cy, payload } = props;
                       if (cx === undefined || cy === undefined || !payload) return null;
                       const hi = stats.userHandicapIndex;
