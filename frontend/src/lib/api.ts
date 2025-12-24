@@ -646,7 +646,7 @@ function transformTemplate(data: Record<string, unknown>): RoundTemplate {
 // Templates API (Plantillas de Partida)
 export const templatesApi = {
   list: async (): Promise<RoundTemplate[]> => {
-    const data = await fetchWithAuth("/templates");
+    const data = await fetchWithAuth("/templates/");
     return (data as Record<string, unknown>[]).map(transformTemplate);
   },
 
@@ -656,7 +656,7 @@ export const templatesApi = {
   },
 
   create: async (template: CreateRoundTemplateInput): Promise<RoundTemplate> => {
-    const data = await fetchWithAuth("/templates", {
+    const data = await fetchWithAuth("/templates/", {
       method: "POST",
       body: JSON.stringify({
         name: template.name,
