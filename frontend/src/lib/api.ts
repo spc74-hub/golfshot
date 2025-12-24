@@ -26,6 +26,10 @@ import type {
 function getApiUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) {
+    // Force HTTPS in production if the page is served over HTTPS
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && envUrl.startsWith('http://')) {
+      return envUrl.replace('http://', 'https://');
+    }
     return envUrl;
   }
   // In production (HTTPS), default to the backend subdomain
