@@ -147,17 +147,7 @@ export function Stats() {
       })
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Add color indicators for dots
-    return filteredRounds.map((point, index) => {
-      const prevHv = index > 0 ? filteredRounds[index - 1].hv : point.hv;
-      const improving = point.hv < prevHv; // Lower HV = better
-      const worsening = point.hv > prevHv;
-      return {
-        ...point,
-        improving,
-        worsening,
-      };
-    });
+    return filteredRounds;
   }, [rounds, timeRange]);
 
   if (isLoading) {
@@ -415,15 +405,16 @@ export function Stats() {
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
                         const data = payload[0].payload;
-                        const color = data.improving ? "#22c55e" : data.worsening ? "#ef4444" : "#6b7280";
+                        const hi = stats.userHandicapIndex;
+                        const belowHI = hi !== null && data.hv < hi;
+                        const aboveHI = hi !== null && data.hv > hi;
+                        const color = belowHI ? "#22c55e" : aboveHI ? "#ef4444" : "#6b7280";
                         return (
                           <div className="bg-background border rounded-lg shadow-lg p-3">
                             <p className="font-medium">{data.course}</p>
                             <p className="text-sm text-muted-foreground">{data.dateLabel}</p>
                             <p className="text-lg font-bold" style={{ color }}>
                               HV: {data.hv?.toFixed(1)}
-                              {data.improving && " ↓"}
-                              {data.worsening && " ↑"}
                             </p>
                           </div>
                         );
@@ -454,16 +445,19 @@ export function Stats() {
                     dot={false}
                     isAnimationActive={false}
                   />
-                  {/* Colored dots on top */}
+                  {/* Colored dots based on HI comparison */}
                   <Line
                     type="monotone"
                     dataKey="hv"
                     stroke="transparent"
                     strokeWidth={0}
-                    dot={(props: { cx?: number; cy?: number; payload?: { improving: boolean; worsening: boolean } }) => {
+                    dot={(props: { cx?: number; cy?: number; payload?: { hv: number } }) => {
                       const { cx, cy, payload } = props;
                       if (cx === undefined || cy === undefined || !payload) return null;
-                      const color = payload.improving ? "#22c55e" : payload.worsening ? "#ef4444" : "#6b7280";
+                      const hi = stats.userHandicapIndex;
+                      const belowHI = hi !== null && payload.hv < hi;
+                      const aboveHI = hi !== null && payload.hv > hi;
+                      const color = belowHI ? "#22c55e" : aboveHI ? "#ef4444" : "#6b7280";
                       return (
                         <circle
                           key={`dot-${cx}-${cy}`}
@@ -484,11 +478,11 @@ export function Stats() {
             <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground mt-3">
               <span className="flex items-center gap-1">
                 <span className="inline-block w-3 h-3 rounded-full bg-green-500"></span>
-                Mejora
+                Mejor que HI
               </span>
               <span className="flex items-center gap-1">
                 <span className="inline-block w-3 h-3 rounded-full bg-red-500"></span>
-                Empeora
+                Peor que HI
               </span>
               <span>Linea punteada = Handicap Index</span>
             </div>
