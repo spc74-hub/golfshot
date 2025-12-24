@@ -49,6 +49,9 @@ import {
   UserCircle,
   Check,
   X,
+  Ban,
+  Trash2,
+  RefreshCw,
 } from "lucide-react";
 import type { UserWithStats, OwnerStats, Permission, SavedPlayer, Round } from "@/types";
 import { Navigate } from "react-router-dom";
@@ -82,6 +85,11 @@ export function OwnerPanel() {
   // Backfill state
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [backfillResult, setBackfillResult] = useState<{ message: string; updated: number; skipped: number } | null>(null);
+
+  // Block/Delete dialog state
+  const [blockDialog, setBlockDialog] = useState<UserWithStats | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<UserWithStats | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     if (isOwner) {
@@ -187,6 +195,38 @@ export function OwnerPanel() {
       setBackfillResult({ message: "Error", updated: 0, skipped: 0 });
     } finally {
       setBackfillLoading(false);
+    }
+  };
+
+  const handleBlockUser = async () => {
+    if (!blockDialog) return;
+    setActionLoading(true);
+    try {
+      const result = await ownerApi.toggleBlockUser(blockDialog.id);
+      setUsers(users.map(u =>
+        u.id === blockDialog.id
+          ? { ...u, status: result.status as "active" | "blocked" }
+          : u
+      ));
+      setBlockDialog(null);
+    } catch (error) {
+      console.error("Error blocking user:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteDialog) return;
+    setActionLoading(true);
+    try {
+      await ownerApi.deleteUser(deleteDialog.id);
+      setUsers(users.filter(u => u.id !== deleteDialog.id));
+      setDeleteDialog(null);
+    } catch (error) {
+      console.error("Error deleting user:", error);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -349,8 +389,11 @@ export function OwnerPanel() {
                     <TableRow key={user.id}>
                       <TableCell>
                         <div>
-                          <div className="font-medium">
+                          <div className="font-medium flex items-center gap-2">
                             {user.displayName || "Sin nombre"}
+                            {user.status === "blocked" && (
+                              <Badge variant="destructive" className="text-xs">Bloqueado</Badge>
+                            )}
                           </div>
                           <div className="text-sm text-muted-foreground">
                             {user.email}
@@ -389,12 +432,13 @@ export function OwnerPanel() {
                       </TableCell>
                       <TableCell>{user.totalRounds}</TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => openPermissionDialog(user)}
                             disabled={user.role === "owner"}
+                            title="Permisos"
                           >
                             <Shield className="h-4 w-4" />
                           </Button>
@@ -402,8 +446,33 @@ export function OwnerPanel() {
                             variant="outline"
                             size="sm"
                             onClick={() => openLinkDialog(user)}
+                            title="Vincular jugador"
                           >
                             <Link2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant={user.status === "blocked" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setBlockDialog(user)}
+                            disabled={user.role === "owner"}
+                            title={user.status === "blocked" ? "Desbloquear" : "Bloquear"}
+                            className={user.status === "blocked" ? "bg-orange-500 hover:bg-orange-600" : ""}
+                          >
+                            {user.status === "blocked" ? (
+                              <RefreshCw className="h-4 w-4" />
+                            ) : (
+                              <Ban className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDeleteDialog(user)}
+                            disabled={user.role === "owner"}
+                            title="Eliminar"
+                            className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -545,6 +614,61 @@ export function OwnerPanel() {
             </Button>
             <Button onClick={handleLinkPlayer}>
               Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Block User Dialog */}
+      <Dialog open={!!blockDialog} onOpenChange={() => setBlockDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {blockDialog?.status === "blocked" ? "Desbloquear" : "Bloquear"} usuario
+            </DialogTitle>
+            <DialogDescription>
+              {blockDialog?.status === "blocked"
+                ? `¿Desbloquear a ${blockDialog?.displayName || blockDialog?.email}? El usuario podra volver a acceder a la aplicacion.`
+                : `¿Bloquear a ${blockDialog?.displayName || blockDialog?.email}? El usuario no podra acceder a la aplicacion mientras este bloqueado.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBlockDialog(null)} disabled={actionLoading}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleBlockUser}
+              disabled={actionLoading}
+              variant={blockDialog?.status === "blocked" ? "default" : "destructive"}
+            >
+              {actionLoading ? "Procesando..." : blockDialog?.status === "blocked" ? "Desbloquear" : "Bloquear"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Dialog */}
+      <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar usuario</DialogTitle>
+            <DialogDescription>
+              ¿Eliminar definitivamente a {deleteDialog?.displayName || deleteDialog?.email}?
+              Esta accion no se puede deshacer y eliminara todas sus partidas y datos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog(null)} disabled={actionLoading}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleDeleteUser}
+              disabled={actionLoading}
+              variant="destructive"
+            >
+              {actionLoading ? "Eliminando..." : "Eliminar"}
             </Button>
           </DialogFooter>
         </DialogContent>

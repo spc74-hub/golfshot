@@ -578,4 +578,18 @@ export const ownerApi = {
       method: "POST",
     });
   },
+
+  // Block/unblock user (owner only)
+  toggleBlockUser: async (userId: string): Promise<{ message: string; status: string }> => {
+    return fetchWithAuth(`/users/${userId}/block`, {
+      method: "PATCH",
+    });
+  },
+
+  // Delete user (owner only)
+  deleteUser: async (userId: string): Promise<{ message: string }> => {
+    return fetchWithAuth(`/users/${userId}`, {
+      method: "DELETE",
+    });
+  },
 };

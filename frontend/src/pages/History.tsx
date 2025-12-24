@@ -66,7 +66,8 @@ interface MonthStats {
   avgStrokesPar3: number | null;
   avgStrokesPar4: number | null;
   avgStrokesPar5: number | null;
-  avgPutts: number | null;
+  avgPutts9: number | null;
+  avgPutts18: number | null;
   girPct: number | null;
   scoreDistribution: {
     eaglesOrBetter: number;
@@ -95,7 +96,8 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
   let par3Strokes: number[] = [];
   let par4Strokes: number[] = [];
   let par5Strokes: number[] = [];
-  let puttsValues: number[] = [];
+  let putts9Values: number[] = [];
+  let putts18Values: number[] = [];
   let girHit = 0;
   let girTotal = 0;
   let eagles = 0, birdies = 0, pars = 0, bogeys = 0, doubleBogeys = 0, tripleOrWorse = 0, totalHoles = 0;
@@ -173,14 +175,15 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
     }
 
     if (holesPlayed > 0) {
-      // Separate strokes by round type
+      // Separate strokes and putts by round type
       const is9Hole = round.courseLength !== "18";
       if (is9Hole) {
         strokes9Values.push(roundStrokes);
+        if (roundPutts > 0) putts9Values.push(roundPutts);
       } else {
         strokes18Values.push(roundStrokes);
+        if (roundPutts > 0) putts18Values.push(roundPutts);
       }
-      if (roundPutts > 0) puttsValues.push(roundPutts);
     }
 
     // HVP
@@ -205,7 +208,8 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
     avgStrokesPar3: par3Strokes.length > 0 ? par3Strokes.reduce((a, b) => a + b, 0) / par3Strokes.length : null,
     avgStrokesPar4: par4Strokes.length > 0 ? par4Strokes.reduce((a, b) => a + b, 0) / par4Strokes.length : null,
     avgStrokesPar5: par5Strokes.length > 0 ? par5Strokes.reduce((a, b) => a + b, 0) / par5Strokes.length : null,
-    avgPutts: puttsValues.length > 0 ? puttsValues.reduce((a, b) => a + b, 0) / puttsValues.length : null,
+    avgPutts9: putts9Values.length > 0 ? putts9Values.reduce((a, b) => a + b, 0) / putts9Values.length : null,
+    avgPutts18: putts18Values.length > 0 ? putts18Values.reduce((a, b) => a + b, 0) / putts18Values.length : null,
     girPct: girTotal > 0 ? (girHit / girTotal) * 100 : null,
     scoreDistribution: {
       eaglesOrBetter: eagles,
@@ -223,11 +227,26 @@ function getScoreDistributionPct(count: number, total: number): number {
   return total > 0 ? (count / total) * 100 : 0;
 }
 
-// Calculate strokes and stableford for a single round
+interface RoundSummary {
+  strokes: number;
+  stableford: number;
+  putts: number;
+  holesPlayed: number;
+  distribution: {
+    eaglesOrBetter: number;
+    birdies: number;
+    pars: number;
+    bogeys: number;
+    doubleBogeys: number;
+    tripleOrWorse: number;
+  };
+}
+
+// Calculate strokes, stableford, putts and distribution for a single round
 function calculateRoundSummary(
   round: Round,
   course: Course | undefined
-): { strokes: number; stableford: number } | null {
+): RoundSummary | null {
   if (!round.isFinished || !course) return null;
 
   const holesMap = new Map<number, HoleData>(
@@ -248,6 +267,9 @@ function calculateRoundSummary(
 
   let totalStrokes = 0;
   let totalStableford = 0;
+  let totalPutts = 0;
+  let holesPlayed = 0;
+  let eagles = 0, birdies = 0, pars = 0, bogeys = 0, doubleBogeys = 0, tripleOrWorse = 0;
 
   for (const holeNum of holesToCount) {
     const score = player.scores[holeNum];
@@ -257,7 +279,18 @@ function calculateRoundSummary(
     const strokes = score.strokes;
     if (strokes <= 0) continue;
 
+    holesPlayed++;
     totalStrokes += strokes;
+    totalPutts += score.putts ?? 0;
+
+    // Score distribution (gross)
+    const grossDiff = strokes - holeData.par;
+    if (grossDiff <= -2) eagles++;
+    else if (grossDiff === -1) birdies++;
+    else if (grossDiff === 0) pars++;
+    else if (grossDiff === 1) bogeys++;
+    else if (grossDiff === 2) doubleBogeys++;
+    else tripleOrWorse++;
 
     const points = calculateStablefordPoints(
       strokes,
@@ -268,7 +301,22 @@ function calculateRoundSummary(
     totalStableford += points;
   }
 
-  return totalStrokes > 0 ? { strokes: totalStrokes, stableford: totalStableford } : null;
+  if (totalStrokes <= 0) return null;
+
+  return {
+    strokes: totalStrokes,
+    stableford: totalStableford,
+    putts: totalPutts,
+    holesPlayed,
+    distribution: {
+      eaglesOrBetter: eagles,
+      birdies,
+      pars,
+      bogeys,
+      doubleBogeys,
+      tripleOrWorse,
+    },
+  };
 }
 
 export function History() {
@@ -428,7 +476,7 @@ export function History() {
                   {/* Monthly Stats Summary */}
                   {group.stats.roundsPlayed > 0 && (
                     <CardContent className="pt-0 pb-4 border-b">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
                         {/* HVP */}
                         <div className="text-center p-2 bg-muted/50 rounded-lg">
                           <div className="text-lg font-bold text-primary">
@@ -449,6 +497,20 @@ export function History() {
                             {group.stats.avgStrokes9?.toFixed(0) ?? "-"}
                           </div>
                           <div className="text-xs text-muted-foreground">Golpes 9h</div>
+                        </div>
+                        {/* Avg Putts 18h */}
+                        <div className="text-center p-2 bg-muted/50 rounded-lg">
+                          <div className="text-lg font-bold">
+                            {group.stats.avgPutts18?.toFixed(0) ?? "-"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Putts 18h</div>
+                        </div>
+                        {/* Avg Putts 9h */}
+                        <div className="text-center p-2 bg-muted/50 rounded-lg">
+                          <div className="text-lg font-bold">
+                            {group.stats.avgPutts9?.toFixed(0) ?? "-"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Putts 9h</div>
                         </div>
                         {/* Par 3 */}
                         <div className="text-center p-2 bg-muted/50 rounded-lg">
@@ -576,6 +638,18 @@ export function History() {
                               ? "Front 9"
                               : "Back 9"}
                           </div>
+                          {/* Score distribution and putts for this round */}
+                          {summary && round.isFinished && (
+                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                              <span>{summary.putts} putts</span>
+                              <span className="text-yellow-600">{summary.distribution.eaglesOrBetter}E</span>
+                              <span className="text-green-600">{summary.distribution.birdies}B</span>
+                              <span className="text-blue-600">{summary.distribution.pars}P</span>
+                              <span className="text-orange-600">{summary.distribution.bogeys}Bo</span>
+                              <span className="text-red-600">{summary.distribution.doubleBogeys}D</span>
+                              <span className="text-red-800">{summary.distribution.tripleOrWorse}T+</span>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 ml-2">
                           {round.isFinished ? (

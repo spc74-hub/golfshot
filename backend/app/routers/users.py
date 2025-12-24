@@ -189,10 +189,10 @@ async def update_user(
 @router.delete("/{user_id}")
 async def delete_user(
     user_id: str,
-    admin_user: UserResponse = Depends(get_admin_user),
+    owner_user: UserResponse = Depends(get_owner_user),
 ):
-    """Delete user (admin only)."""
-    if admin_user.id == user_id:
+    """Delete user (owner only)."""
+    if owner_user.id == user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete your own account",
@@ -201,10 +201,72 @@ async def delete_user(
     supabase = get_supabase_admin_client()
 
     try:
+        # Check if user exists and is not owner
+        profile_response = supabase.table("profiles").select("role").eq("id", user_id).single().execute()
+        if profile_response.data and profile_response.data.get("role") == "owner":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot delete owner account",
+            )
+
         # Delete user from auth (cascade will delete profile and rounds)
         supabase.auth.admin.delete_user(user_id)
 
         return {"message": "User deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.patch("/{user_id}/block")
+async def toggle_block_user(
+    user_id: str,
+    owner_user: UserResponse = Depends(get_owner_user),
+):
+    """Block or unblock a user (owner only). Toggles between 'active' and 'blocked' status."""
+    if owner_user.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot block your own account",
+        )
+
+    supabase = get_supabase_admin_client()
+
+    try:
+        # Get current status
+        profile_response = supabase.table("profiles").select("role, status").eq("id", user_id).single().execute()
+
+        if not profile_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        if profile_response.data.get("role") == "owner":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot block owner account",
+            )
+
+        current_status = profile_response.data.get("status", "active")
+        new_status = "active" if current_status == "blocked" else "blocked"
+
+        # Update status
+        update_response = supabase.table("profiles").update({"status": new_status}).eq("id", user_id).execute()
+
+        if not update_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        return {"message": f"User {'unblocked' if new_status == 'active' else 'blocked'} successfully", "status": new_status}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

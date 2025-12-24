@@ -18,6 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Play, Flag } from "lucide-react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import type { Player, HoleData } from "@/types";
 import { SCORE_COLORS } from "@/types";
 
@@ -240,6 +242,9 @@ export function RoundCard() {
         </Button>
         <div className="text-center flex-1">
           <h1 className="text-xl font-bold">{round.courseName}</h1>
+          <div className="text-sm text-muted-foreground mb-1">
+            {format(new Date(round.roundDate), "d 'de' MMMM yyyy", { locale: es })}
+          </div>
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <span className="capitalize">{round.gameMode}</span>
             {round.isFinished ? (

@@ -12,7 +12,7 @@ export interface User {
   email: string;
   displayName: string | null;
   role: Role;
-  status: "active" | "disabled";
+  status: "active" | "disabled" | "blocked";
   permissions: Permission[];
   linkedPlayerId: string | null;
   createdAt: string;
