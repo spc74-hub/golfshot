@@ -28,7 +28,8 @@ import { Play, Trash2, Eye, Edit, Flag, Upload, ChevronDown, ChevronRight, Trend
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useState, useMemo } from "react";
-import type { Round, HoleData, Course } from "@/types";
+import type { Round, HoleData, Course, Player } from "@/types";
+import { calculatePlayingHandicap } from "@/lib/calculations";
 
 // Calculate Stableford points for a hole
 function calculateStablefordPoints(
@@ -56,6 +57,28 @@ function calculateStablefordPoints(
   if (diff === 0) return 2; // Par
   if (diff === 1) return 1; // Bogey
   return 0; // Double bogey or worse
+}
+
+// Helper to recalculate HDJ if stored as 0 (legacy rounds)
+function recalculateHDJ(player: Player, course: Course, handicapPercentage: number = 100): number {
+  if (player.playingHandicap !== 0) return player.playingHandicap;
+  // Find the tee slope for this player
+  const tee = course.tees?.find((t) => t.name === player.teeBox);
+  if (!tee) return player.playingHandicap;
+  // Recalculate using the stored handicap index and tee slope
+  return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, handicapPercentage);
+}
+
+// Get the effective handicap for a player (when useHandicap is false, all use first player's handicap)
+function getEffectiveHandicap(player: Player, round: Round, course: Course): number {
+  // When useHandicap is false, everyone uses the first player's handicap
+  if (!round.useHandicap) {
+    const firstPlayer = round.players[0];
+    if (!firstPlayer) return 0;
+    // Recalculate if stored as 0 (legacy rounds created before fix)
+    return recalculateHDJ(firstPlayer, course, round.handicapPercentage);
+  }
+  return recalculateHDJ(player, course, round.handicapPercentage);
 }
 
 interface MonthStats {
@@ -125,6 +148,9 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
     const player = round.players[0];
     if (!player) continue;
 
+    // Get effective handicap (handles legacy rounds and "común" mode)
+    const effectiveHandicap = getEffectiveHandicap(player, round, course);
+
     let roundStrokes = 0;
     let roundPutts = 0;
     let roundStableford = 0;
@@ -169,8 +195,8 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
         if (strokesToGreen <= targetStrokes) girHit++;
       }
 
-      // Stableford
-      const points = calculateStablefordPoints(strokes, par, player.playingHandicap, hcpIndex);
+      // Stableford (use effective handicap)
+      const points = calculateStablefordPoints(strokes, par, effectiveHandicap, hcpIndex);
       roundStableford += points;
     }
 
@@ -232,6 +258,7 @@ interface RoundSummary {
   stableford: number;
   putts: number;
   holesPlayed: number;
+  girPct: number | null;
   distribution: {
     eaglesOrBetter: number;
     birdies: number;
@@ -265,11 +292,16 @@ function calculateRoundSummary(
   const player = round.players[0];
   if (!player) return null;
 
+  // Get effective handicap (handles legacy rounds and "común" mode)
+  const effectiveHandicap = getEffectiveHandicap(player, round, course);
+
   let totalStrokes = 0;
   let totalStableford = 0;
   let totalPutts = 0;
   let holesPlayed = 0;
   let eagles = 0, birdies = 0, pars = 0, bogeys = 0, doubleBogeys = 0, tripleOrWorse = 0;
+  let girHit = 0;
+  let girTotal = 0;
 
   for (const holeNum of holesToCount) {
     const score = player.scores[holeNum];
@@ -281,7 +313,18 @@ function calculateRoundSummary(
 
     holesPlayed++;
     totalStrokes += strokes;
-    totalPutts += score.putts ?? 0;
+    const putts = score.putts ?? 0;
+    totalPutts += putts;
+
+    // GIR calculation (Green in Regulation)
+    if (putts > 0) {
+      const strokesToGreen = strokes - putts;
+      const targetStrokes = holeData.par - 2;
+      girTotal++;
+      if (strokesToGreen <= targetStrokes) {
+        girHit++;
+      }
+    }
 
     // Score distribution (gross)
     const grossDiff = strokes - holeData.par;
@@ -292,10 +335,11 @@ function calculateRoundSummary(
     else if (grossDiff === 2) doubleBogeys++;
     else tripleOrWorse++;
 
+    // Stableford (use effective handicap)
     const points = calculateStablefordPoints(
       strokes,
       holeData.par,
-      player.playingHandicap,
+      effectiveHandicap,
       holeData.handicap
     );
     totalStableford += points;
@@ -308,6 +352,7 @@ function calculateRoundSummary(
     stableford: totalStableford,
     putts: totalPutts,
     holesPlayed,
+    girPct: girTotal > 0 ? (girHit / girTotal) * 100 : null,
     distribution: {
       eaglesOrBetter: eagles,
       birdies,
@@ -640,14 +685,17 @@ export function History() {
                           </div>
                           {/* Score distribution and putts for this round */}
                           {summary && round.isFinished && (
-                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
                               <span>{summary.putts} putts</span>
-                              <span className="text-yellow-600">{summary.distribution.eaglesOrBetter}E</span>
-                              <span className="text-green-600">{summary.distribution.birdies}B</span>
-                              <span className="text-blue-600">{summary.distribution.pars}P</span>
-                              <span className="text-orange-600">{summary.distribution.bogeys}Bo</span>
-                              <span className="text-red-600">{summary.distribution.doubleBogeys}D</span>
-                              <span className="text-red-800">{summary.distribution.tripleOrWorse}T+</span>
+                              {summary.girPct != null && (
+                                <span className="font-medium">GIR: {summary.girPct.toFixed(0)}%</span>
+                              )}
+                              <span className="text-yellow-600">{summary.distribution.eaglesOrBetter}E ({getScoreDistributionPct(summary.distribution.eaglesOrBetter, summary.holesPlayed).toFixed(0)}%)</span>
+                              <span className="text-green-600">{summary.distribution.birdies}B ({getScoreDistributionPct(summary.distribution.birdies, summary.holesPlayed).toFixed(0)}%)</span>
+                              <span className="text-blue-600">{summary.distribution.pars}P ({getScoreDistributionPct(summary.distribution.pars, summary.holesPlayed).toFixed(0)}%)</span>
+                              <span className="text-orange-600">{summary.distribution.bogeys}Bo ({getScoreDistributionPct(summary.distribution.bogeys, summary.holesPlayed).toFixed(0)}%)</span>
+                              <span className="text-red-600">{summary.distribution.doubleBogeys}D ({getScoreDistributionPct(summary.distribution.doubleBogeys, summary.holesPlayed).toFixed(0)}%)</span>
+                              <span className="text-red-800">{summary.distribution.tripleOrWorse}T+ ({getScoreDistributionPct(summary.distribution.tripleOrWorse, summary.holesPlayed).toFixed(0)}%)</span>
                             </div>
                           )}
                         </div>

@@ -28,10 +28,21 @@ def calculate_virtual_handicap(
     players: list,
     course_length: str,
     holes_data: list,
+    use_handicap: bool = True,
+    handicap_percentage: int = 100,
+    tees: list | None = None,
 ) -> float | None:
     """
     Calculate Virtual Handicap for the first player in the round.
     HV = Handicap Index - (Stableford Points - 36) for 18 holes.
+
+    Args:
+        players: List of player data
+        course_length: "18", "front9", or "back9"
+        holes_data: List of hole data with par and handicap
+        use_handicap: If False, all players use the first player's handicap ("común" mode)
+        handicap_percentage: Percentage of handicap to use (100 or 75)
+        tees: List of tees with slope data (for recalculating HDJ if stored as 0)
 
     Returns None if calculation cannot be performed.
     """
@@ -46,6 +57,19 @@ def calculate_virtual_handicap(
 
     if not scores or od_handicap_index is None:
         return None
+
+    # Handle legacy rounds where playing_handicap was stored as 0
+    # Recalculate from od_handicap_index if we have tee data
+    if playing_handicap == 0 and od_handicap_index > 0 and tees:
+        tee_box = user_player.get("tee_box", "")
+        matching_tee = next((t for t in tees if t.get("name") == tee_box), None)
+        if matching_tee:
+            slope = matching_tee.get("slope", 113)
+            playing_handicap = calculate_playing_handicap(od_handicap_index, slope, handicap_percentage)
+
+    # If use_handicap is False ("común" mode), we still use the first player's handicap
+    # for Stableford calculation internally
+    effective_handicap = playing_handicap
 
     # Determine which holes to count based on course_length
     if course_length == "front9":
@@ -81,9 +105,9 @@ def calculate_virtual_handicap(
 
         # Calculate strokes received on this hole
         strokes_received = 0
-        if playing_handicap > 0:
-            base_strokes = playing_handicap // 18
-            remainder = playing_handicap % 18
+        if effective_handicap > 0:
+            base_strokes = effective_handicap // 18
+            remainder = effective_handicap % 18
             strokes_received = base_strokes + (1 if handicap_index <= remainder else 0)
 
         # Calculate net score and Stableford points
@@ -362,12 +386,22 @@ async def update_round(
             # Calculate and store Virtual Handicap when players/scores are updated
             course_id = existing.data.get("course_id")
             course_length = existing.data.get("course_length", "18")
+            use_handicap = existing.data.get("use_handicap", True)
+            handicap_percentage = existing.data.get("handicap_percentage", 100)
             if course_id:
-                # Get course holes_data for HV calculation
-                course_response = supabase.table("courses").select("holes_data").eq("id", course_id).single().execute()
+                # Get course holes_data and tees for HV calculation
+                course_response = supabase.table("courses").select("holes_data, tees").eq("id", course_id).single().execute()
                 if course_response.data and course_response.data.get("holes_data"):
                     holes_data = course_response.data["holes_data"]
-                    virtual_handicap = calculate_virtual_handicap(players_data, course_length, holes_data)
+                    tees = course_response.data.get("tees", [])
+                    virtual_handicap = calculate_virtual_handicap(
+                        players_data,
+                        course_length,
+                        holes_data,
+                        use_handicap=use_handicap,
+                        handicap_percentage=handicap_percentage,
+                        tees=tees,
+                    )
                     if virtual_handicap is not None:
                         update_data["virtual_handicap"] = virtual_handicap
 
@@ -704,7 +738,15 @@ async def save_imported_round(
 
         # Calculate Virtual Handicap for this imported round
         course_holes_data = course.get("holes_data", []) if course else holes_data
-        virtual_handicap = calculate_virtual_handicap([player], course_length, course_holes_data)
+        course_tees = course.get("tees", []) if course else [tee_played]
+        virtual_handicap = calculate_virtual_handicap(
+            [player],
+            course_length,
+            course_holes_data,
+            use_handicap=True,  # Imported rounds always use handicap
+            handicap_percentage=100,
+            tees=course_tees,
+        )
 
         # Create the imported round
         new_round = {

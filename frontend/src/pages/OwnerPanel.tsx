@@ -39,6 +39,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Crown,
   Users,
@@ -52,6 +54,7 @@ import {
   Ban,
   Trash2,
   RefreshCw,
+  Key,
 } from "lucide-react";
 import type { UserWithStats, OwnerStats, Permission, SavedPlayer, Round } from "@/types";
 import { Navigate } from "react-router-dom";
@@ -90,6 +93,11 @@ export function OwnerPanel() {
   const [blockDialog, setBlockDialog] = useState<UserWithStats | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<UserWithStats | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Reset password dialog state
+  const [resetPasswordDialog, setResetPasswordDialog] = useState<UserWithStats | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   useEffect(() => {
     if (isOwner) {
@@ -225,6 +233,26 @@ export function OwnerPanel() {
       setDeleteDialog(null);
     } catch (error) {
       console.error("Error deleting user:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordDialog) return;
+    if (newPassword.length < 6) {
+      setPasswordError("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+    setPasswordError("");
+    setActionLoading(true);
+    try {
+      await ownerApi.resetUserPassword(resetPasswordDialog.id, newPassword);
+      setResetPasswordDialog(null);
+      setNewPassword("");
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      setPasswordError("Error al cambiar la contraseña");
     } finally {
       setActionLoading(false);
     }
@@ -451,6 +479,19 @@ export function OwnerPanel() {
                             <Link2 className="h-4 w-4" />
                           </Button>
                           <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setResetPasswordDialog(user);
+                              setNewPassword("");
+                              setPasswordError("");
+                            }}
+                            disabled={user.role === "owner"}
+                            title="Cambiar contraseña"
+                          >
+                            <Key className="h-4 w-4" />
+                          </Button>
+                          <Button
                             variant={user.status === "blocked" ? "default" : "outline"}
                             size="sm"
                             onClick={() => setBlockDialog(user)}
@@ -669,6 +710,46 @@ export function OwnerPanel() {
               variant="destructive"
             >
               {actionLoading ? "Eliminando..." : "Eliminar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={!!resetPasswordDialog} onOpenChange={() => setResetPasswordDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cambiar contraseña</DialogTitle>
+            <DialogDescription>
+              Nueva contraseña para {resetPasswordDialog?.displayName || resetPasswordDialog?.email}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-password">Nueva contraseña</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimo 6 caracteres"
+              />
+              {passwordError && (
+                <p className="text-sm text-destructive">{passwordError}</p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetPasswordDialog(null)} disabled={actionLoading}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleResetPassword}
+              disabled={actionLoading || newPassword.length < 6}
+            >
+              {actionLoading ? "Cambiando..." : "Cambiar contraseña"}
             </Button>
           </DialogFooter>
         </DialogContent>

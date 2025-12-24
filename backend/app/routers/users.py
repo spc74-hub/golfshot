@@ -1,9 +1,14 @@
 from fastapi import APIRouter, HTTPException, status, Depends
+from pydantic import BaseModel
 from app.models.schemas import UserResponse, UserUpdate, UserStats, UserWithStats, UserPermissionsUpdate
 from app.services.supabase import get_supabase_client, get_supabase_admin_client
 from app.dependencies import get_current_user, get_admin_user, get_owner_user
 from typing import Dict, Any
 from datetime import datetime, date
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -265,6 +270,102 @@ async def toggle_block_user(
             )
 
         return {"message": f"User {'unblocked' if new_status == 'active' else 'blocked'} successfully", "status": new_status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.patch("/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: str,
+    request: ResetPasswordRequest,
+    owner_user: UserResponse = Depends(get_owner_user),
+):
+    """Reset a user's password (owner only)."""
+    if len(request.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters",
+        )
+
+    supabase = get_supabase_admin_client()
+
+    try:
+        # Check if user exists and is not owner
+        profile_response = supabase.table("profiles").select("role").eq("id", user_id).single().execute()
+
+        if not profile_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        if profile_response.data.get("role") == "owner":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot reset owner password via this endpoint",
+            )
+
+        # Update user password using admin API
+        supabase.auth.admin.update_user_by_id(
+            user_id,
+            {"password": request.new_password}
+        )
+
+        return {"message": "Password reset successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+class UpdateMyProfileRequest(BaseModel):
+    display_name: str | None = None
+    linked_player_id: str | None = None
+
+
+@router.patch("/me")
+async def update_my_profile(
+    request: UpdateMyProfileRequest,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Update the current user's profile."""
+    supabase = get_supabase_admin_client()
+
+    try:
+        update_data = {}
+        if request.display_name is not None:
+            update_data["display_name"] = request.display_name
+        if request.linked_player_id is not None:
+            update_data["linked_player_id"] = request.linked_player_id
+
+        if not update_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update",
+            )
+
+        response = (
+            supabase.table("profiles")
+            .update(update_data)
+            .eq("id", current_user.id)
+            .execute()
+        )
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Profile not found",
+            )
+
+        return {"message": "Profile updated successfully"}
     except HTTPException:
         raise
     except Exception as e:
@@ -898,7 +999,7 @@ async def backfill_virtual_handicap(owner_user: UserResponse = Depends(get_owner
         # Get all finished rounds without virtual_handicap
         rounds_response = (
             supabase.table("rounds")
-            .select("id, course_id, course_length, players")
+            .select("id, course_id, course_length, players, use_handicap, handicap_percentage")
             .eq("is_finished", True)
             .is_("virtual_handicap", "null")
             .execute()
@@ -908,9 +1009,15 @@ async def backfill_virtual_handicap(owner_user: UserResponse = Depends(get_owner
         if not rounds:
             return {"message": "No rounds to process", "updated": 0, "skipped": 0}
 
-        # Get all courses for holes_data
-        courses_response = supabase.table("courses").select("id, holes_data").execute()
-        courses = {c["id"]: c.get("holes_data", []) for c in (courses_response.data or [])}
+        # Get all courses for holes_data and tees
+        courses_response = supabase.table("courses").select("id, holes_data, tees").execute()
+        courses = {
+            c["id"]: {
+                "holes_data": c.get("holes_data", []),
+                "tees": c.get("tees", []),
+            }
+            for c in (courses_response.data or [])
+        }
 
         updated = 0
         skipped = 0
@@ -921,18 +1028,29 @@ async def backfill_virtual_handicap(owner_user: UserResponse = Depends(get_owner
             course_id = round_data.get("course_id")
             course_length = round_data.get("course_length", "18")
             players = round_data.get("players", [])
+            use_handicap = round_data.get("use_handicap", True)
+            handicap_percentage = round_data.get("handicap_percentage", 100)
 
             if not course_id or not players:
                 skipped += 1
                 continue
 
-            holes_data = courses.get(course_id, [])
+            course_data = courses.get(course_id, {})
+            holes_data = course_data.get("holes_data", [])
+            tees = course_data.get("tees", [])
             if not holes_data:
                 skipped += 1
                 continue
 
             # Calculate virtual handicap
-            virtual_handicap = calculate_vh_for_backfill(players, course_length, holes_data)
+            virtual_handicap = calculate_vh_for_backfill(
+                players,
+                course_length,
+                holes_data,
+                use_handicap=use_handicap,
+                handicap_percentage=handicap_percentage,
+                tees=tees,
+            )
 
             if virtual_handicap is not None:
                 try:
@@ -958,8 +1076,31 @@ async def backfill_virtual_handicap(owner_user: UserResponse = Depends(get_owner
         )
 
 
-def calculate_vh_for_backfill(players: list, course_length: str, holes_data: list) -> float | None:
-    """Calculate Virtual Handicap for backfill: HV = Handicap Index - (Stableford Points - 36)."""
+def calculate_playing_handicap_for_backfill(handicap_index: float, slope: int, percentage: int = 100) -> int:
+    """Calculate playing handicap from handicap index and slope."""
+    playing_hcp = (handicap_index * slope) / 113
+    return round(playing_hcp * percentage / 100)
+
+
+def calculate_vh_for_backfill(
+    players: list,
+    course_length: str,
+    holes_data: list,
+    use_handicap: bool = True,
+    handicap_percentage: int = 100,
+    tees: list | None = None,
+) -> float | None:
+    """
+    Calculate Virtual Handicap for backfill: HV = Handicap Index - (Stableford Points - 36).
+
+    Args:
+        players: List of player data
+        course_length: "18", "front9", or "back9"
+        holes_data: List of hole data with par and handicap
+        use_handicap: If False, all players use the first player's handicap ("común" mode)
+        handicap_percentage: Percentage of handicap to use (100 or 75)
+        tees: List of tees with slope data (for recalculating HDJ if stored as 0)
+    """
     if not players or not holes_data:
         return None
 
@@ -970,6 +1111,19 @@ def calculate_vh_for_backfill(players: list, course_length: str, holes_data: lis
 
     if not scores or od_handicap_index is None:
         return None
+
+    # Handle legacy rounds where playing_handicap was stored as 0
+    # Recalculate from od_handicap_index if we have tee data
+    if playing_handicap == 0 and od_handicap_index > 0 and tees:
+        tee_box = user_player.get("tee_box", "")
+        matching_tee = next((t for t in tees if t.get("name") == tee_box), None)
+        if matching_tee:
+            slope = matching_tee.get("slope", 113)
+            playing_handicap = calculate_playing_handicap_for_backfill(od_handicap_index, slope, handicap_percentage)
+
+    # If use_handicap is False ("común" mode), we still use the first player's handicap
+    # for Stableford calculation internally
+    effective_handicap = playing_handicap
 
     if course_length == "front9":
         holes_to_count = range(1, 10)
@@ -1000,9 +1154,9 @@ def calculate_vh_for_backfill(players: list, course_length: str, holes_data: lis
         hcp_index = hole_data.get("handicap", 1)
 
         strokes_received = 0
-        if playing_handicap > 0:
-            base_strokes = playing_handicap // 18
-            remainder = playing_handicap % 18
+        if effective_handicap > 0:
+            base_strokes = effective_handicap // 18
+            remainder = effective_handicap % 18
             strokes_received = base_strokes + (1 if hcp_index <= remainder else 0)
 
         net_score = strokes - strokes_received

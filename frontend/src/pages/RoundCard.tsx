@@ -286,11 +286,13 @@ export function RoundCard() {
                 ...round.players[1],
                 playingHandicap: getEffectiveHandicap(round.players[1]),
               };
+              const is9Holes = round.courseLength !== "18";
               const matchScore = calculateMatchPlayScore(
                 player1WithEffectiveHcp,
                 player2WithEffectiveHcp,
                 round.completedHoles || [],
-                course.holesData
+                course.holesData,
+                is9Holes
               );
               const holesRemaining = getMatchPlayHolesRemaining(
                 round.courseLength,

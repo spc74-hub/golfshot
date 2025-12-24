@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCourses } from "@/hooks/useCourses";
 import { useCreateRound } from "@/hooks/useRounds";
-import { usePlayers } from "@/hooks/usePlayers";
+import { usePlayers, useCreatePlayer } from "@/hooks/usePlayers";
 import { useAuth } from "@/context/AuthContext";
 import { calculatePlayingHandicap } from "@/lib/calculations";
 import { coursesApi } from "@/lib/api";
@@ -34,7 +34,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Upload, ClipboardPaste, Image, Check, X, UserPlus } from "lucide-react";
+import { Loader2, Upload, ClipboardPaste, Image, Check, X, UserPlus, Save } from "lucide-react";
 import type {
   Course,
   GameMode,
@@ -95,6 +95,7 @@ export function RoundSetup() {
   const { data: courses, isLoading: coursesLoading, refetch: refetchCourses } = useCourses();
   const { data: savedPlayers } = usePlayers();
   const createRound = useCreateRound();
+  const createPlayer = useCreatePlayer();
 
   // Form state
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
@@ -347,6 +348,26 @@ export function RoundSetup() {
         playingHandicap: initialHDJ,
       },
     ]);
+  };
+
+  // Check if a player is already saved
+  const isPlayerSaved = (player: PlayerForm): boolean => {
+    if (!savedPlayers || !player.name.trim()) return true;
+    return savedPlayers.some(sp => sp.name.toLowerCase() === player.name.toLowerCase().trim());
+  };
+
+  // Save player to "Mis jugadores"
+  const savePlayerToList = async (player: PlayerForm) => {
+    if (!player.name.trim()) return;
+    try {
+      await createPlayer.mutateAsync({
+        name: player.name.trim(),
+        handicapIndex: player.odHandicapIndex,
+        preferredTee: player.teeBox,
+      });
+    } catch (error) {
+      console.error("Error saving player:", error);
+    }
   };
 
   // Remove player
@@ -875,16 +896,19 @@ export function RoundSetup() {
                       <Input
                         type="text"
                         inputMode="decimal"
-                        pattern="[0-9]*[.,]?[0-9]*"
-                        value={player.odHandicapIndex === 0 ? "" : player.odHandicapIndex}
+                        value={player.odHandicapIndex === 0 ? "" : String(player.odHandicapIndex).replace(".", ",")}
                         onChange={(e) => {
-                          const value = e.target.value.replace(",", ".");
-                          if (value === "" || value === ".") {
-                            updatePlayer(player.tempId, "odHandicapIndex", 0);
-                          } else {
-                            const num = parseFloat(value);
-                            if (!isNaN(num) && num >= 0 && num <= 54) {
-                              updatePlayer(player.tempId, "odHandicapIndex", num);
+                          const rawValue = e.target.value;
+                          // Allow empty, digits, and one decimal separator
+                          if (rawValue === "" || /^[0-9]*[.,]?[0-9]*$/.test(rawValue)) {
+                            const normalized = rawValue.replace(",", ".");
+                            if (normalized === "" || normalized === ".") {
+                              updatePlayer(player.tempId, "odHandicapIndex", 0);
+                            } else {
+                              const num = parseFloat(normalized);
+                              if (!isNaN(num) && num >= 0 && num <= 54) {
+                                updatePlayer(player.tempId, "odHandicapIndex", num);
+                              }
                             }
                           }
                         }}
@@ -894,7 +918,7 @@ export function RoundSetup() {
                             updatePlayer(player.tempId, "odHandicapIndex", 0);
                           }
                         }}
-                        placeholder="0.0"
+                        placeholder="0,0"
                       />
                     </div>
 
@@ -902,17 +926,20 @@ export function RoundSetup() {
                       <div className="space-y-1">
                         <Label className="text-xs">HDJ (Handicap de Juego)</Label>
                         <Input
-                          type="number"
-                          min={0}
-                          max={54}
-                          value={player.playingHandicap}
-                          onChange={(e) =>
-                            updatePlayerHDJ(
-                              player.tempId,
-                              parseInt(e.target.value) || 0
-                            )
-                          }
+                          type="text"
+                          inputMode="numeric"
+                          value={player.playingHandicap === 0 ? "" : String(player.playingHandicap)}
+                          onChange={(e) => {
+                            const rawValue = e.target.value;
+                            if (rawValue === "" || /^[0-9]*$/.test(rawValue)) {
+                              const num = rawValue === "" ? 0 : parseInt(rawValue, 10);
+                              if (!isNaN(num) && num >= 0 && num <= 54) {
+                                updatePlayerHDJ(player.tempId, num);
+                              }
+                            }
+                          }}
                           className="font-semibold"
+                          placeholder="0"
                         />
                       </div>
                     )}
@@ -947,6 +974,25 @@ export function RoundSetup() {
                       </div>
                     )}
                   </div>
+
+                  {/* Save player button - only show if not already saved */}
+                  {!isPlayerSaved(player) && player.name.trim() && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full mt-2"
+                      onClick={() => savePlayerToList(player)}
+                      disabled={createPlayer.isPending}
+                    >
+                      {createPlayer.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-2" />
+                      )}
+                      Guardar en mis jugadores
+                    </Button>
+                  )}
                 </div>
               ))}
 

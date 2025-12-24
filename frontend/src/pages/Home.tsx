@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useRounds } from "@/hooks/useRounds";
 import { roundsApi } from "@/lib/api";
+import { OnboardingDialog } from "@/components/OnboardingDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -44,6 +45,25 @@ export function Home() {
   const { user } = useAuth();
   const { data: rounds, isLoading, refetch } = useRounds();
   const navigate = useNavigate();
+
+  // Onboarding dialog - show if user has no displayName or linkedPlayerId
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+
+  useEffect(() => {
+    // Show onboarding if user exists but hasn't completed profile
+    if (user && !onboardingDismissed) {
+      const needsOnboarding = !user.displayName || !user.linkedPlayerId;
+      setShowOnboarding(needsOnboarding);
+    }
+  }, [user, onboardingDismissed]);
+
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false);
+    setOnboardingDismissed(true);
+    // Reload page to refresh user data
+    window.location.reload();
+  };
 
   // Join round dialog
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
@@ -293,6 +313,12 @@ export function Home() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Onboarding Dialog for new users */}
+      <OnboardingDialog
+        open={showOnboarding}
+        onComplete={handleOnboardingComplete}
+      />
     </div>
   );
 }

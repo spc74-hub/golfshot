@@ -349,12 +349,19 @@ export function calculateInStrokes(player: Player): number {
 /**
  * Match Play result for a single hole
  * Returns: 1 = player1 wins, -1 = player2 wins, 0 = halved (tie)
+ *
+ * In Match Play, strokes are given based on the DIFFERENCE between handicaps.
+ * The lower handicap player plays at scratch (0 strokes), and the higher
+ * handicap player receives strokes equal to the difference.
+ *
+ * For 9-hole rounds, the handicap difference is halved (rounded).
  */
 export function calculateMatchPlayHoleResult(
   player1: Player,
   player2: Player,
   holeNumber: number,
-  holesData: HoleData[]
+  holesData: HoleData[],
+  is9Holes: boolean = false
 ): number {
   const holeData = holesData.find((h) => h.number === holeNumber);
   if (!holeData) return 0;
@@ -364,16 +371,25 @@ export function calculateMatchPlayHoleResult(
 
   if (!score1 || !score2) return 0;
 
-  const net1 = calculateNetScore(
-    score1.strokes,
-    player1.playingHandicap,
-    holeData.handicap
-  );
-  const net2 = calculateNetScore(
-    score2.strokes,
-    player2.playingHandicap,
-    holeData.handicap
-  );
+  // Calculate handicap difference - only the higher handicap player receives strokes
+  // For 9-hole rounds, halve the difference (rounded)
+  let hcpDiff = player2.playingHandicap - player1.playingHandicap;
+  if (is9Holes) {
+    hcpDiff = Math.round(hcpDiff / 2);
+  }
+
+  let net1: number;
+  let net2: number;
+
+  if (hcpDiff >= 0) {
+    // Player 2 has higher handicap (or equal), player 1 plays scratch
+    net1 = score1.strokes;
+    net2 = calculateNetScore(score2.strokes, hcpDiff, holeData.handicap);
+  } else {
+    // Player 1 has higher handicap, player 2 plays scratch
+    net1 = calculateNetScore(score1.strokes, -hcpDiff, holeData.handicap);
+    net2 = score2.strokes;
+  }
 
   if (net1 < net2) return 1; // Player 1 wins
   if (net2 < net1) return -1; // Player 2 wins
@@ -388,10 +404,11 @@ export function calculateMatchPlayScore(
   player1: Player,
   player2: Player,
   completedHoles: number[],
-  holesData: HoleData[]
+  holesData: HoleData[],
+  is9Holes: boolean = false
 ): number {
   return completedHoles.reduce((score, holeNum) => {
-    return score + calculateMatchPlayHoleResult(player1, player2, holeNum, holesData);
+    return score + calculateMatchPlayHoleResult(player1, player2, holeNum, holesData, is9Holes);
   }, 0);
 }
 

@@ -184,6 +184,16 @@ export const usersApi = {
     return fetchWithAuth(`/users/${id}`, { method: "DELETE" });
   },
 
+  updateMyProfile: async (data: { displayName?: string; linkedPlayerId?: string }): Promise<{ message: string }> => {
+    return fetchWithAuth("/users/me", {
+      method: "PATCH",
+      body: JSON.stringify({
+        display_name: data.displayName,
+        linked_player_id: data.linkedPlayerId,
+      }),
+    });
+  },
+
   getMyStats: async (): Promise<UserStats> => {
     const data = await fetchWithAuth("/users/me/stats");
     // Transform snake_case to camelCase
@@ -590,6 +600,14 @@ export const ownerApi = {
   deleteUser: async (userId: string): Promise<{ message: string }> => {
     return fetchWithAuth(`/users/${userId}`, {
       method: "DELETE",
+    });
+  },
+
+  // Reset user password (owner only)
+  resetUserPassword: async (userId: string, newPassword: string): Promise<{ message: string }> => {
+    return fetchWithAuth(`/users/${userId}/reset-password`, {
+      method: "PATCH",
+      body: JSON.stringify({ new_password: newPassword }),
     });
   },
 };
