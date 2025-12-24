@@ -278,3 +278,59 @@ class UserStats(BaseModel):
     triple_or_worse_pct: Optional[float] = None
     # GIR (Green in Regulation) percentage
     gir_pct: Optional[float] = None
+
+
+# Round Template schemas (Plantillas de Partida)
+class RoundTemplateCreate(BaseModel):
+    name: str
+    course_id: Optional[str] = None
+    course_name: Optional[str] = None
+    course_length: Optional[Literal["18", "front9", "back9"]] = None
+    game_mode: Literal["stableford", "stroke", "sindicato", "team", "matchplay"]
+    use_handicap: bool = True
+    handicap_percentage: Literal[100, 75] = 100
+    sindicato_points: Optional[list[int]] = None
+    team_mode: Optional[Literal["bestBall", "goodBadBall"]] = None
+    best_ball_points: Optional[int] = None
+    worst_ball_points: Optional[int] = None
+    player_ids: list[str] = []  # List of saved_player IDs
+    default_tee: Optional[str] = None
+    is_favorite: bool = False
+
+
+class RoundTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    course_id: Optional[str] = None
+    course_name: Optional[str] = None
+    course_length: Optional[Literal["18", "front9", "back9"]] = None
+    game_mode: Optional[Literal["stableford", "stroke", "sindicato", "team", "matchplay"]] = None
+    use_handicap: Optional[bool] = None
+    handicap_percentage: Optional[Literal[100, 75]] = None
+    sindicato_points: Optional[list[int]] = None
+    team_mode: Optional[Literal["bestBall", "goodBadBall"]] = None
+    best_ball_points: Optional[int] = None
+    worst_ball_points: Optional[int] = None
+    player_ids: Optional[list[str]] = None
+    default_tee: Optional[str] = None
+    is_favorite: Optional[bool] = None
+
+
+class RoundTemplateResponse(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    course_id: Optional[str] = None
+    course_name: Optional[str] = None
+    course_length: Optional[Literal["18", "front9", "back9"]] = None
+    game_mode: Literal["stableford", "stroke", "sindicato", "team", "matchplay"]
+    use_handicap: bool
+    handicap_percentage: int
+    sindicato_points: Optional[list[int]] = None
+    team_mode: Optional[Literal["bestBall", "goodBadBall"]] = None
+    best_ball_points: Optional[int] = None
+    worst_ball_points: Optional[int] = None
+    player_ids: list[str] = []
+    default_tee: Optional[str] = None
+    is_favorite: bool = False
+    created_at: datetime
+    updated_at: datetime

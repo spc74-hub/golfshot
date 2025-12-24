@@ -364,3 +364,59 @@ export interface OwnerRoundsResponse {
   limit: number;
   offset: number;
 }
+
+// Round Template types (Plantillas de Partida)
+export interface RoundTemplate {
+  id: string;
+  userId: string;
+  name: string;
+  courseId: string | null;
+  courseName: string | null;
+  courseLength: CourseLength | null;
+  gameMode: GameMode;
+  useHandicap: boolean;
+  handicapPercentage: 100 | 75;
+  sindicatoPoints: number[] | null;
+  teamMode: TeamMode | null;
+  bestBallPoints: number | null;
+  worstBallPoints: number | null;
+  playerIds: string[];
+  defaultTee: string | null;
+  isFavorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRoundTemplateInput {
+  name: string;
+  courseId?: string;
+  courseName?: string;
+  courseLength?: CourseLength;
+  gameMode: GameMode;
+  useHandicap?: boolean;
+  handicapPercentage?: 100 | 75;
+  sindicatoPoints?: number[];
+  teamMode?: TeamMode;
+  bestBallPoints?: number;
+  worstBallPoints?: number;
+  playerIds?: string[];
+  defaultTee?: string;
+  isFavorite?: boolean;
+}
+
+export interface UpdateRoundTemplateInput {
+  name?: string;
+  courseId?: string;
+  courseName?: string;
+  courseLength?: CourseLength;
+  gameMode?: GameMode;
+  useHandicap?: boolean;
+  handicapPercentage?: 100 | 75;
+  sindicatoPoints?: number[];
+  teamMode?: TeamMode;
+  bestBallPoints?: number;
+  worstBallPoints?: number;
+  playerIds?: string[];
+  defaultTee?: string;
+  isFavorite?: boolean;
+}

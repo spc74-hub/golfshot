@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useCourses } from "@/hooks/useCourses";
 import { useCreateRound } from "@/hooks/useRounds";
 import { usePlayers, useCreatePlayer } from "@/hooks/usePlayers";
+import { useTemplates, useTemplate } from "@/hooks/useTemplates";
 import { useAuth } from "@/context/AuthContext";
 import { calculatePlayingHandicap } from "@/lib/calculations";
 import { coursesApi } from "@/lib/api";
@@ -35,7 +36,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Upload, ClipboardPaste, Image, Check, X, UserPlus, Save } from "lucide-react";
+import { Loader2, Upload, ClipboardPaste, Image, Check, X, UserPlus, Save, Zap } from "lucide-react";
 import type {
   Course,
   GameMode,
@@ -92,9 +93,13 @@ const COURSE_LENGTHS: { value: CourseLength; label: string }[] = [
 
 export function RoundSetup() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const templateId = searchParams.get("templateId");
   const { user } = useAuth();
   const { data: courses, isLoading: coursesLoading, refetch: refetchCourses } = useCourses();
   const { data: savedPlayers } = usePlayers();
+  const { data: templates } = useTemplates();
+  const { data: selectedTemplate } = useTemplate(templateId || "");
   const createRound = useCreateRound();
   const createPlayer = useCreatePlayer();
 
@@ -112,6 +117,8 @@ export function RoundSetup() {
   );
   const [players, setPlayers] = useState<PlayerForm[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [templateApplied, setTemplateApplied] = useState(false);
+  const [appliedTemplateForPlayers, setAppliedTemplateForPlayers] = useState<typeof selectedTemplate>(undefined);
 
   // Image upload state
   const [isExtracting, setIsExtracting] = useState(false);
@@ -130,6 +137,118 @@ export function RoundSetup() {
     () => courses?.find((c: Course) => c.id === selectedCourseId),
     [courses, selectedCourseId]
   );
+
+  // Apply template when loaded from URL param
+  useEffect(() => {
+    if (selectedTemplate && !templateApplied && courses && savedPlayers) {
+      // Apply template settings
+      if (selectedTemplate.courseId) {
+        const courseExists = courses.some((c: Course) => c.id === selectedTemplate.courseId);
+        if (courseExists) {
+          setSelectedCourseId(selectedTemplate.courseId);
+        }
+      }
+      if (selectedTemplate.courseLength) {
+        setCourseLength(selectedTemplate.courseLength);
+      }
+      setGameMode(selectedTemplate.gameMode);
+      setUseHandicap(selectedTemplate.useHandicap);
+      setHandicapPercentage(selectedTemplate.handicapPercentage);
+
+      if (selectedTemplate.sindicatoPoints) {
+        setSindicatoPoints(selectedTemplate.sindicatoPoints);
+      }
+      if (selectedTemplate.teamMode) {
+        setTeamMode(selectedTemplate.teamMode);
+      }
+      if (selectedTemplate.bestBallPoints) {
+        setBestBallPoints(selectedTemplate.bestBallPoints);
+      }
+      if (selectedTemplate.worstBallPoints) {
+        setWorstBallPoints(selectedTemplate.worstBallPoints);
+      }
+
+      setAppliedTemplateForPlayers(selectedTemplate);
+      setTemplateApplied(true);
+    }
+  }, [selectedTemplate, templateApplied, courses, savedPlayers]);
+
+  // Apply template players after course is set (need course tees for HDJ calculation)
+  useEffect(() => {
+    if (appliedTemplateForPlayers && selectedCourse && savedPlayers && players.length === 0) {
+      // Add players from template
+      if (appliedTemplateForPlayers.playerIds && appliedTemplateForPlayers.playerIds.length > 0) {
+        const templatePlayers: PlayerForm[] = [];
+        for (const playerId of appliedTemplateForPlayers.playerIds) {
+          const savedPlayer = savedPlayers.find(sp => sp.id === playerId);
+          if (savedPlayer) {
+            const preferredTee = savedPlayer.preferredTee || appliedTemplateForPlayers.defaultTee;
+            const teeBox = selectedCourse.tees.find(t => t.name === preferredTee)?.name
+              || selectedCourse.tees[0]?.name
+              || "Amarillas";
+            const initialHDJ = calculateInitialHDJ(savedPlayer.handicapIndex, teeBox);
+
+            templatePlayers.push({
+              tempId: crypto.randomUUID(),
+              name: savedPlayer.name,
+              odHandicapIndex: savedPlayer.handicapIndex,
+              teeBox,
+              team: appliedTemplateForPlayers.gameMode === "team"
+                ? (templatePlayers.length % 2 === 0 ? "A" : "B")
+                : undefined,
+              playingHandicap: initialHDJ,
+            });
+          }
+        }
+        if (templatePlayers.length > 0) {
+          setPlayers(templatePlayers);
+        }
+      }
+      // Clear the applied template for players after processing
+      setAppliedTemplateForPlayers(undefined);
+    }
+  }, [appliedTemplateForPlayers, selectedCourse, savedPlayers, players.length]);
+
+  // Apply a template from the quick selector
+  const applyTemplate = (template: NonNullable<typeof templates>[number]) => {
+    if (!template || !courses) return;
+
+    // Reset players first
+    setPlayers([]);
+
+    // Apply course
+    if (template.courseId) {
+      const courseExists = courses.some((c: Course) => c.id === template.courseId);
+      if (courseExists) {
+        setSelectedCourseId(template.courseId);
+      }
+    }
+    if (template.courseLength) {
+      setCourseLength(template.courseLength);
+    }
+
+    // Apply game settings
+    setGameMode(template.gameMode);
+    setUseHandicap(template.useHandicap);
+    setHandicapPercentage(template.handicapPercentage);
+
+    if (template.sindicatoPoints) {
+      setSindicatoPoints(template.sindicatoPoints);
+    }
+    if (template.teamMode) {
+      setTeamMode(template.teamMode);
+    }
+    if (template.bestBallPoints) {
+      setBestBallPoints(template.bestBallPoints);
+    }
+    if (template.worstBallPoints) {
+      setWorstBallPoints(template.worstBallPoints);
+    }
+
+    // Store template for player loading (will be processed when course is set)
+    setAppliedTemplateForPlayers(template);
+    setTemplateApplied(true);
+  };
 
   // Calculate initial HDJ for a player (always calculate, even if useHandicap is false)
   const calculateInitialHDJ = (handicapIndex: number, teeName: string): number => {
@@ -467,6 +586,55 @@ export function RoundSetup() {
           Configura tu partida de golf
         </p>
       </div>
+
+      {/* Quick Templates */}
+      {templates && templates.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-yellow-500" />
+                <CardTitle className="text-lg">Plantillas</CardTitle>
+              </div>
+              <Link to="/templates">
+                <Button variant="ghost" size="sm" className="text-xs">
+                  Gestionar
+                </Button>
+              </Link>
+            </div>
+            <CardDescription>Carga una configuracion guardada</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {templates
+                .slice()
+                .sort((a, b) => {
+                  // Favorites first
+                  if (a.isFavorite && !b.isFavorite) return -1;
+                  if (!a.isFavorite && b.isFavorite) return 1;
+                  return a.name.localeCompare(b.name);
+                })
+                .map((template) => (
+                  <Button
+                    key={template.id}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => applyTemplate(template)}
+                  >
+                    {template.isFavorite && <span className="mr-1 text-yellow-500">★</span>}
+                    {template.name}
+                    {template.courseName && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({template.courseName.split(" ")[0]})
+                      </span>
+                    )}
+                  </Button>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Course Selection */}
       <Card>

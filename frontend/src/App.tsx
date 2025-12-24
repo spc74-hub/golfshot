@@ -15,6 +15,7 @@ import { RoundPlay } from "@/pages/RoundPlay";
 import { RoundCard } from "@/pages/RoundCard";
 import { ImportRound } from "@/pages/ImportRound";
 import { Players } from "@/pages/Players";
+import { Templates } from "@/pages/Templates";
 import { Stats } from "@/pages/Stats";
 import { OwnerPanel } from "@/pages/OwnerPanel";
 
@@ -115,6 +116,16 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Players />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/templates"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Templates />
                   </Layout>
                 </ProtectedRoute>
               }

@@ -16,6 +16,9 @@ import type {
   UpdateSavedPlayerInput,
   Permission,
   JoinRoundResponse,
+  RoundTemplate,
+  CreateRoundTemplateInput,
+  UpdateRoundTemplateInput,
 } from "@/types";
 
 // Get API URL from environment or use default
@@ -609,5 +612,98 @@ export const ownerApi = {
       method: "PATCH",
       body: JSON.stringify({ new_password: newPassword }),
     });
+  },
+};
+
+// Transform backend template (snake_case) to frontend (camelCase)
+function transformTemplate(data: Record<string, unknown>): RoundTemplate {
+  return {
+    id: data.id as string,
+    userId: data.user_id as string,
+    name: data.name as string,
+    courseId: data.course_id as string | null,
+    courseName: data.course_name as string | null,
+    courseLength: data.course_length as RoundTemplate["courseLength"],
+    gameMode: data.game_mode as RoundTemplate["gameMode"],
+    useHandicap: data.use_handicap as boolean,
+    handicapPercentage: data.handicap_percentage as 100 | 75,
+    sindicatoPoints: data.sindicato_points as number[] | null,
+    teamMode: data.team_mode as RoundTemplate["teamMode"],
+    bestBallPoints: data.best_ball_points as number | null,
+    worstBallPoints: data.worst_ball_points as number | null,
+    playerIds: (data.player_ids || []) as string[],
+    defaultTee: data.default_tee as string | null,
+    isFavorite: (data.is_favorite || false) as boolean,
+    createdAt: data.created_at as string,
+    updatedAt: data.updated_at as string,
+  };
+}
+
+// Templates API (Plantillas de Partida)
+export const templatesApi = {
+  list: async (): Promise<RoundTemplate[]> => {
+    const data = await fetchWithAuth("/templates");
+    return (data as Record<string, unknown>[]).map(transformTemplate);
+  },
+
+  get: async (id: string): Promise<RoundTemplate> => {
+    const data = await fetchWithAuth(`/templates/${id}`);
+    return transformTemplate(data);
+  },
+
+  create: async (template: CreateRoundTemplateInput): Promise<RoundTemplate> => {
+    const data = await fetchWithAuth("/templates", {
+      method: "POST",
+      body: JSON.stringify({
+        name: template.name,
+        course_id: template.courseId,
+        course_name: template.courseName,
+        course_length: template.courseLength,
+        game_mode: template.gameMode,
+        use_handicap: template.useHandicap ?? true,
+        handicap_percentage: template.handicapPercentage ?? 100,
+        sindicato_points: template.sindicatoPoints,
+        team_mode: template.teamMode,
+        best_ball_points: template.bestBallPoints,
+        worst_ball_points: template.worstBallPoints,
+        player_ids: template.playerIds || [],
+        default_tee: template.defaultTee,
+        is_favorite: template.isFavorite ?? false,
+      }),
+    });
+    return transformTemplate(data);
+  },
+
+  update: async (id: string, template: UpdateRoundTemplateInput): Promise<RoundTemplate> => {
+    const payload: Record<string, unknown> = {};
+    if (template.name !== undefined) payload.name = template.name;
+    if (template.courseId !== undefined) payload.course_id = template.courseId;
+    if (template.courseName !== undefined) payload.course_name = template.courseName;
+    if (template.courseLength !== undefined) payload.course_length = template.courseLength;
+    if (template.gameMode !== undefined) payload.game_mode = template.gameMode;
+    if (template.useHandicap !== undefined) payload.use_handicap = template.useHandicap;
+    if (template.handicapPercentage !== undefined) payload.handicap_percentage = template.handicapPercentage;
+    if (template.sindicatoPoints !== undefined) payload.sindicato_points = template.sindicatoPoints;
+    if (template.teamMode !== undefined) payload.team_mode = template.teamMode;
+    if (template.bestBallPoints !== undefined) payload.best_ball_points = template.bestBallPoints;
+    if (template.worstBallPoints !== undefined) payload.worst_ball_points = template.worstBallPoints;
+    if (template.playerIds !== undefined) payload.player_ids = template.playerIds;
+    if (template.defaultTee !== undefined) payload.default_tee = template.defaultTee;
+    if (template.isFavorite !== undefined) payload.is_favorite = template.isFavorite;
+
+    const data = await fetchWithAuth(`/templates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return transformTemplate(data);
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await fetchWithAuth(`/templates/${id}`, { method: "DELETE" });
+  },
+
+  toggleFavorite: async (id: string): Promise<{ isFavorite: boolean }> => {
+    const data = await fetchWithAuth(`/templates/${id}/favorite`, { method: "PATCH" });
+    return { isFavorite: data.is_favorite };
   },
 };

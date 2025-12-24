@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, History, Play, Flag, Users, BarChart3, MapPin, UserPlus } from "lucide-react";
+import { Plus, History, Play, Flag, Users, BarChart3, MapPin, UserPlus, Zap } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -171,6 +171,19 @@ export function Home() {
               <div>
                 <CardTitle className="text-lg">Jugadores</CardTitle>
                 <CardDescription>Gestiona tus jugadores habituales</CardDescription>
+              </div>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link to="/templates">
+          <Card className="hover:bg-accent transition-colors cursor-pointer">
+            <CardHeader className="flex flex-row items-center space-x-4 pb-2">
+              <div className="p-2 bg-yellow-500/10 rounded-lg">
+                <Zap className="h-6 w-6 text-yellow-600" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Plantillas</CardTitle>
+                <CardDescription>Accesos directos de partida</CardDescription>
               </div>
             </CardHeader>
           </Card>

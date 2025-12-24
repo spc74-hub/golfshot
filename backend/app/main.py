@@ -2,7 +2,7 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.routers import auth, users, courses, rounds, admin, players
+from app.routers import auth, users, courses, rounds, admin, players, templates
 
 settings = get_settings()
 
@@ -32,6 +32,7 @@ app.include_router(users.router)
 app.include_router(courses.router)
 app.include_router(rounds.router)
 app.include_router(players.router)
+app.include_router(templates.router)
 app.include_router(admin.router)
 
 
