@@ -188,6 +188,7 @@ export interface AdminStats {
 
 export interface UserStats {
   totalRounds: number;
+  roundsThisMonth: number;  // Rounds completed this month
   userHandicapIndex: number | null;  // User's official handicap index
   avgStrokesPar3: number | null;
   avgStrokesPar4: number | null;

@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useRounds } from "@/hooks/useRounds";
+import { useTemplates } from "@/hooks/useTemplates";
+import { useUserStats } from "@/hooks/useStats";
 import { roundsApi } from "@/lib/api";
 import { OnboardingDialog } from "@/components/OnboardingDialog";
 import { Button } from "@/components/ui/button";
@@ -9,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -22,36 +23,83 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, History, Play, Flag, Users, BarChart3, MapPin, UserPlus, Zap } from "lucide-react";
+import {
+  Plus,
+  History,
+  Play,
+  Flag,
+  Users,
+  BarChart3,
+  MapPin,
+  UserPlus,
+  Zap,
+  TrendingUp,
+  Target,
+  Calendar,
+  ChevronRight,
+} from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import type { Round } from "@/types";
 
-// Safe date formatting function
+// Safe date formatting function - compact format for dashboard
 function formatRoundDate(dateStr: string | undefined): string {
-  if (!dateStr) return "Fecha no disponible";
+  if (!dateStr) return "";
   try {
-    // Try parsing as ISO date first
     const date = parseISO(dateStr);
     if (isNaN(date.getTime())) {
-      return dateStr; // Return original string if parsing fails
+      return dateStr;
     }
-    return format(date, "PPP", { locale: es });
+    return format(date, "d MMM", { locale: es });
   } catch {
-    return dateStr; // Return original string on error
+    return dateStr;
   }
+}
+
+// Helper to format HVP deviation compared to user's real handicap
+function formatHvpDeviation(
+  hvp: number | null,
+  userHandicap: number | null
+): React.ReactNode {
+  if (hvp === null || userHandicap === null) return null;
+
+  const diff = hvp - userHandicap;
+  if (Math.abs(diff) < 0.1) return null;
+
+  const sign = diff > 0 ? "+" : "";
+  const colorClass = diff < 0 ? "text-green-600" : "text-red-500";
+
+  return (
+    <span className={`text-xs font-normal ${colorClass}`}>
+      ({sign}{diff.toFixed(1)})
+    </span>
+  );
+}
+
+// Calculate total strokes for a round (first player only)
+function calculateTotalStrokes(round: Round): number {
+  let total = 0;
+  if (round.players.length > 0) {
+    const player = round.players[0];
+    for (const score of Object.values(player.scores)) {
+      total += score.strokes;
+    }
+  }
+  return total;
 }
 
 export function Home() {
   const { user } = useAuth();
-  const { data: rounds, isLoading, refetch } = useRounds();
+  const { data: rounds, isLoading: roundsLoading, refetch } = useRounds();
+  const { data: templates, isLoading: templatesLoading } = useTemplates();
+  const { data: stats, isLoading: statsLoading } = useUserStats();
   const navigate = useNavigate();
 
-  // Onboarding dialog - show if user has no displayName or linkedPlayerId
+  // Onboarding dialog
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
 
   useEffect(() => {
-    // Show onboarding if user exists but hasn't completed profile
     if (user && !onboardingDismissed) {
       const needsOnboarding = !user.displayName || !user.linkedPlayerId;
       setShowOnboarding(needsOnboarding);
@@ -61,7 +109,6 @@ export function Home() {
   const handleOnboardingComplete = () => {
     setShowOnboarding(false);
     setOnboardingDismissed(true);
-    // Reload page to refresh user data
     window.location.reload();
   };
 
@@ -71,10 +118,18 @@ export function Home() {
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
 
-  // Get active (unfinished) rounds
+  // Get active and recent rounds
   const activeRounds = rounds?.filter((r) => !r.isFinished) || [];
-  // Get recent finished rounds
   const recentRounds = rounds?.filter((r) => r.isFinished).slice(0, 3) || [];
+
+  // Sort templates: favorites first, then by name
+  const sortedTemplates = templates
+    ?.slice()
+    .sort((a, b) => {
+      if (a.isFavorite && !b.isFavorite) return -1;
+      if (!a.isFavorite && b.isFavorite) return 1;
+      return a.name.localeCompare(b.name);
+    }) || [];
 
   const handleJoinRound = async () => {
     if (!shareCode.trim() || shareCode.length !== 6) {
@@ -108,127 +163,173 @@ export function Home() {
         <p className="text-muted-foreground">Bienvenido a Golf Shot</p>
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <Link to="/round/setup">
-          <Card className="hover:bg-accent transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center space-x-4 pb-2">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Plus className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Nueva Partida</CardTitle>
-                <CardDescription>Comienza una nueva ronda de golf</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
-        </Link>
-        <Link to="/history">
-          <Card className="hover:bg-accent transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center space-x-4 pb-2">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <History className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Historial</CardTitle>
-                <CardDescription>Ver todas tus partidas</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
-        </Link>
-        <Link to="/stats">
-          <Card className="hover:bg-accent transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center space-x-4 pb-2">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <BarChart3 className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Estadisticas</CardTitle>
-                <CardDescription>Analiza tu rendimiento</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
-        </Link>
-        <Link to="/courses">
-          <Card className="hover:bg-accent transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center space-x-4 pb-2">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <MapPin className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Campos</CardTitle>
-                <CardDescription>Gestiona tus campos de golf</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
-        </Link>
-        <Link to="/players">
-          <Card className="hover:bg-accent transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center space-x-4 pb-2">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Users className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Jugadores</CardTitle>
-                <CardDescription>Gestiona tus jugadores habituales</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
-        </Link>
-        <Link to="/templates">
-          <Card className="hover:bg-accent transition-colors cursor-pointer">
-            <CardHeader className="flex flex-row items-center space-x-4 pb-2">
-              <div className="p-2 bg-yellow-500/10 rounded-lg">
-                <Zap className="h-6 w-6 text-yellow-600" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Plantillas</CardTitle>
-                <CardDescription>Accesos directos de partida</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
-        </Link>
-        <Card
-          className="hover:bg-accent transition-colors cursor-pointer border-dashed"
-          onClick={() => setJoinDialogOpen(true)}
-        >
-          <CardHeader className="flex flex-row items-center space-x-4 pb-2">
-            <div className="p-2 bg-green-500/10 rounded-lg">
-              <UserPlus className="h-6 w-6 text-green-600" />
+      {/* Quick Start Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-yellow-500" />
+              <CardTitle className="text-lg">Inicio Rapido</CardTitle>
             </div>
-            <div>
-              <CardTitle className="text-lg">Unirse a Partida</CardTitle>
-              <CardDescription>Introduce un codigo para unirte</CardDescription>
-            </div>
-          </CardHeader>
-        </Card>
-      </div>
+            {sortedTemplates.length > 0 && (
+              <Link to="/templates">
+                <Button variant="ghost" size="sm" className="text-xs">
+                  Gestionar
+                </Button>
+              </Link>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {/* Template buttons */}
+            {sortedTemplates.slice(0, 5).map((template) => (
+              <Link key={template.id} to={`/round/setup?template=${template.id}`}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-sm"
+                >
+                  {template.isFavorite && <span className="mr-1 text-yellow-500">★</span>}
+                  {template.name}
+                  {template.courseName && (
+                    <span className="ml-1 text-muted-foreground text-xs">
+                      ({template.courseName.split(" ")[0]})
+                    </span>
+                  )}
+                </Button>
+              </Link>
+            ))}
+            {/* New round button - always shown */}
+            <Link to="/round/setup">
+              <Button variant="default" size="sm" className="text-sm">
+                <Plus className="h-4 w-4 mr-1" />
+                Nueva Partida
+              </Button>
+            </Link>
+          </div>
+          {sortedTemplates.length === 0 && !templatesLoading && (
+            <p className="text-xs text-muted-foreground mt-2">
+              <Link to="/templates" className="text-primary hover:underline">
+                Crea plantillas
+              </Link>{" "}
+              para empezar partidas con un solo click
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Active Rounds */}
+      {/* Stats Overview Section */}
+      {!statsLoading && stats && stats.totalRounds > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Tu Rendimiento
+            </h2>
+            <Link to="/stats">
+              <Button variant="ghost" size="sm" className="text-xs">
+                Ver todo
+              </Button>
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* HVP Month */}
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="text-xs text-muted-foreground mb-1">HVP Mes</div>
+                <div className="text-xl font-bold">
+                  {stats.hvpMonth !== null ? (
+                    <>
+                      {stats.hvpMonth.toFixed(1)}
+                      {" "}{formatHvpDeviation(stats.hvpMonth, stats.userHandicapIndex)}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground text-base">-</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* HVP Quarter */}
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="text-xs text-muted-foreground mb-1">HVP Trim.</div>
+                <div className="text-xl font-bold">
+                  {stats.hvpQuarter !== null ? (
+                    <>
+                      {stats.hvpQuarter.toFixed(1)}
+                      {" "}{formatHvpDeviation(stats.hvpQuarter, stats.userHandicapIndex)}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground text-base">-</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Rounds This Month */}
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  Este Mes
+                </div>
+                <div className="text-xl font-bold">
+                  {stats.roundsThisMonth}
+                  <span className="text-xs font-normal text-muted-foreground ml-1">rondas</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* GIR */}
+            <Card className="bg-muted/30">
+              <CardContent className="pt-4 pb-3 px-4">
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                  <Target className="h-3 w-3" />
+                  GIR
+                </div>
+                <div className="text-xl font-bold">
+                  {stats.girPct !== null ? (
+                    <>{stats.girPct.toFixed(0)}%</>
+                  ) : (
+                    <span className="text-muted-foreground text-base">-</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Active Rounds Section */}
       {activeRounds.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Partidas en Progreso</h2>
-          <div className="grid gap-4">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3">
+            <Play className="h-5 w-5 text-green-500" />
+            Partidas en Progreso
+          </h2>
+          <div className="space-y-2">
             {activeRounds.map((round) => (
               <Link key={round.id} to={`/round/play?id=${round.id}`}>
                 <Card className="hover:bg-accent transition-colors cursor-pointer">
-                  <CardHeader className="pb-2">
+                  <CardContent className="py-3 px-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">{round.courseName}</CardTitle>
-                      <Badge variant="secondary">
-                        <Play className="h-3 w-3 mr-1" />
-                        Hoyo {round.currentHole}
-                      </Badge>
-                    </div>
-                    <CardDescription>
-                      {formatRoundDate(round.roundDate)}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span>{round.players.length} jugadores</span>
-                      <span>-</span>
-                      <span className="capitalize">{round.gameMode}</span>
+                      <div>
+                        <div className="font-medium">{round.courseName}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {round.players.length} jugadores · {round.gameMode}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">
+                          Hoyo {round.currentHole}
+                        </Badge>
+                        <Button size="sm" variant="default">
+                          Continuar
+                          <ChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -238,46 +339,106 @@ export function Home() {
         </div>
       )}
 
-      {/* Recent Rounds */}
+      {/* Quick Links Section */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Accesos Rapidos</h2>
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+          <Link to="/history">
+            <Card className="hover:bg-accent transition-colors cursor-pointer h-full">
+              <CardContent className="flex flex-col items-center justify-center py-4 px-2">
+                <History className="h-6 w-6 text-primary mb-1" />
+                <span className="text-xs text-center">Historial</span>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link to="/stats">
+            <Card className="hover:bg-accent transition-colors cursor-pointer h-full">
+              <CardContent className="flex flex-col items-center justify-center py-4 px-2">
+                <BarChart3 className="h-6 w-6 text-primary mb-1" />
+                <span className="text-xs text-center">Estadisticas</span>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link to="/courses">
+            <Card className="hover:bg-accent transition-colors cursor-pointer h-full">
+              <CardContent className="flex flex-col items-center justify-center py-4 px-2">
+                <MapPin className="h-6 w-6 text-primary mb-1" />
+                <span className="text-xs text-center">Campos</span>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link to="/players">
+            <Card className="hover:bg-accent transition-colors cursor-pointer h-full">
+              <CardContent className="flex flex-col items-center justify-center py-4 px-2">
+                <Users className="h-6 w-6 text-primary mb-1" />
+                <span className="text-xs text-center">Jugadores</span>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link to="/templates">
+            <Card className="hover:bg-accent transition-colors cursor-pointer h-full">
+              <CardContent className="flex flex-col items-center justify-center py-4 px-2">
+                <Zap className="h-6 w-6 text-yellow-500 mb-1" />
+                <span className="text-xs text-center">Plantillas</span>
+              </CardContent>
+            </Card>
+          </Link>
+          <Card
+            className="hover:bg-accent transition-colors cursor-pointer h-full border-dashed"
+            onClick={() => setJoinDialogOpen(true)}
+          >
+            <CardContent className="flex flex-col items-center justify-center py-4 px-2">
+              <UserPlus className="h-6 w-6 text-green-600 mb-1" />
+              <span className="text-xs text-center">Unirse</span>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Recent Rounds Section */}
       {recentRounds.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">Partidas Recientes</h2>
             <Link to="/history">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="text-xs">
                 Ver todas
               </Button>
             </Link>
           </div>
-          <div className="grid gap-4">
-            {recentRounds.map((round) => (
-              <Link key={round.id} to={`/round/card?id=${round.id}`}>
-                <Card className="hover:bg-accent transition-colors cursor-pointer">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">{round.courseName}</CardTitle>
-                      <Badge>Finalizada</Badge>
+          <Card>
+            <CardContent className="py-2 px-0">
+              {recentRounds.map((round, index) => (
+                <Link key={round.id} to={`/round/card?id=${round.id}`}>
+                  <div
+                    className={`flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors ${
+                      index < recentRounds.length - 1 ? "border-b" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm font-medium">
+                        {round.courseName.length > 25
+                          ? round.courseName.substring(0, 25) + "..."
+                          : round.courseName}
+                      </div>
                     </div>
-                    <CardDescription>
-                      {formatRoundDate(round.roundDate)}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span>{round.players.length} jugadores</span>
-                      <span>-</span>
-                      <span className="capitalize">{round.gameMode}</span>
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      <span>{formatRoundDate(round.roundDate)}</span>
+                      <span>{calculateTotalStrokes(round)} golpes</span>
+                      <Badge variant="outline" className="text-xs">
+                        {round.gameMode}
+                      </Badge>
                     </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
+                  </div>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
         </div>
       )}
 
       {/* Empty state */}
-      {!isLoading && (!rounds || rounds.length === 0) && (
+      {!roundsLoading && (!rounds || rounds.length === 0) && (
         <Card className="text-center py-12">
           <CardContent>
             <Flag className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -327,7 +488,7 @@ export function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* Onboarding Dialog for new users */}
+      {/* Onboarding Dialog */}
       <OnboardingDialog
         open={showOnboarding}
         onComplete={handleOnboardingComplete}

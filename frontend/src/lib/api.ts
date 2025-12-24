@@ -206,6 +206,7 @@ export const usersApi = {
     // Transform snake_case to camelCase
     return {
       totalRounds: data.total_rounds,
+      roundsThisMonth: data.rounds_this_month ?? 0,
       userHandicapIndex: data.user_handicap_index,
       avgStrokesPar3: data.avg_strokes_par3,
       avgStrokesPar4: data.avg_strokes_par4,
