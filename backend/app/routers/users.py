@@ -13,6 +13,55 @@ class ResetPasswordRequest(BaseModel):
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+class UpdateMyProfileRequest(BaseModel):
+    display_name: str | None = None
+    linked_player_id: str | None = None
+
+
+@router.patch("/me")
+async def update_my_profile(
+    request: UpdateMyProfileRequest,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Update the current user's profile."""
+    supabase = get_supabase_admin_client()
+
+    try:
+        update_data = {}
+        if request.display_name is not None:
+            update_data["display_name"] = request.display_name
+        if request.linked_player_id is not None:
+            update_data["linked_player_id"] = request.linked_player_id
+
+        if not update_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update",
+            )
+
+        response = (
+            supabase.table("profiles")
+            .update(update_data)
+            .eq("id", current_user.id)
+            .execute()
+        )
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Profile not found",
+            )
+
+        return {"message": "Profile updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
 @router.get("/", response_model=list[UserResponse])
 async def list_users(admin_user: UserResponse = Depends(get_admin_user)):
     """List all users (admin only)."""
@@ -59,6 +108,10 @@ async def get_user(
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Get user by ID."""
+    # Skip reserved paths - they have their own endpoints
+    if user_id in ("me", "owner"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     # Users can only view their own profile unless admin/owner
     if current_user.id != user_id and current_user.role not in ("admin", "owner"):
         raise HTTPException(
@@ -110,6 +163,10 @@ async def update_user(
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Update user profile."""
+    # Skip reserved paths - they have their own endpoints
+    if user_id in ("me", "owner"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     # Users can update their own profile (display_name, linked_player_id only)
     # Admins can update any user (including status)
     # Only owner can change roles and permissions
@@ -197,6 +254,10 @@ async def delete_user(
     owner_user: UserResponse = Depends(get_owner_user),
 ):
     """Delete user (owner only)."""
+    # Skip reserved paths
+    if user_id in ("me", "owner"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     if owner_user.id == user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -233,6 +294,10 @@ async def toggle_block_user(
     owner_user: UserResponse = Depends(get_owner_user),
 ):
     """Block or unblock a user (owner only). Toggles between 'active' and 'blocked' status."""
+    # Skip reserved paths
+    if user_id in ("me", "owner"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     if owner_user.id == user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -286,6 +351,10 @@ async def reset_user_password(
     owner_user: UserResponse = Depends(get_owner_user),
 ):
     """Reset a user's password (owner only)."""
+    # Skip reserved paths
+    if user_id in ("me", "owner"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     if len(request.new_password) < 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -317,55 +386,6 @@ async def reset_user_password(
         )
 
         return {"message": "Password reset successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
-
-
-class UpdateMyProfileRequest(BaseModel):
-    display_name: str | None = None
-    linked_player_id: str | None = None
-
-
-@router.patch("/me")
-async def update_my_profile(
-    request: UpdateMyProfileRequest,
-    current_user: UserResponse = Depends(get_current_user),
-):
-    """Update the current user's profile."""
-    supabase = get_supabase_admin_client()
-
-    try:
-        update_data = {}
-        if request.display_name is not None:
-            update_data["display_name"] = request.display_name
-        if request.linked_player_id is not None:
-            update_data["linked_player_id"] = request.linked_player_id
-
-        if not update_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No fields to update",
-            )
-
-        response = (
-            supabase.table("profiles")
-            .update(update_data)
-            .eq("id", current_user.id)
-            .execute()
-        )
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Profile not found",
-            )
-
-        return {"message": "Profile updated successfully"}
     except HTTPException:
         raise
     except Exception as e:
