@@ -1,4 +1,6 @@
+import { useState, useMemo } from "react";
 import { useUserStats } from "@/hooks/useStats";
+import { useRounds } from "@/hooks/useRounds";
 import {
   Card,
   CardContent,
@@ -7,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   TrendingUp,
   Award,
@@ -16,8 +19,20 @@ import {
   MapPin,
   User,
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, subMonths, subYears, isAfter } from "date-fns";
 import { es } from "date-fns/locale";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
+
+type TimeRange = "3m" | "6m" | "1y" | "all";
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "N/A";
@@ -85,6 +100,53 @@ function formatHvpVsHandicap(
 
 export function Stats() {
   const { data: stats, isLoading, error } = useUserStats();
+  const { data: rounds } = useRounds();
+  const [timeRange, setTimeRange] = useState<TimeRange>("1y");
+
+  // Prepare chart data from finished rounds with virtual handicap
+  const chartData = useMemo(() => {
+    if (!rounds) return [];
+
+    const today = new Date();
+    let cutoffDate: Date | null = null;
+
+    switch (timeRange) {
+      case "3m":
+        cutoffDate = subMonths(today, 3);
+        break;
+      case "6m":
+        cutoffDate = subMonths(today, 6);
+        break;
+      case "1y":
+        cutoffDate = subYears(today, 1);
+        break;
+      case "all":
+        cutoffDate = null;
+        break;
+    }
+
+    return rounds
+      .filter((r) => {
+        if (!r.isFinished || r.virtualHandicap == null) return false;
+        if (!cutoffDate) return true;
+        try {
+          const roundDate = parseISO(r.roundDate);
+          return isAfter(roundDate, cutoffDate);
+        } catch {
+          return false;
+        }
+      })
+      .map((r) => {
+        const date = parseISO(r.roundDate);
+        return {
+          date: r.roundDate,
+          dateLabel: format(date, "d MMM", { locale: es }),
+          hv: r.virtualHandicap,
+          course: r.courseName,
+        };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [rounds, timeRange]);
 
   if (isLoading) {
     return (
@@ -271,6 +333,117 @@ export function Stats() {
           </div>
         </CardContent>
       </Card>
+
+      {/* HV Evolution Chart */}
+      {chartData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Evolucion del HV
+                </CardTitle>
+                <CardDescription>
+                  Handicap Virtual por ronda a lo largo del tiempo
+                </CardDescription>
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  variant={timeRange === "3m" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTimeRange("3m")}
+                >
+                  3M
+                </Button>
+                <Button
+                  variant={timeRange === "6m" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTimeRange("6m")}
+                >
+                  6M
+                </Button>
+                <Button
+                  variant={timeRange === "1y" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTimeRange("1y")}
+                >
+                  1A
+                </Button>
+                <Button
+                  variant={timeRange === "all" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTimeRange("all")}
+                >
+                  Todo
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis
+                    dataKey="dateLabel"
+                    tick={{ fontSize: 12 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12 }}
+                    tickLine={false}
+                    axisLine={false}
+                    domain={["dataMin - 2", "dataMax + 2"]}
+                    reversed
+                  />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-background border rounded-lg shadow-lg p-3">
+                            <p className="font-medium">{data.course}</p>
+                            <p className="text-sm text-muted-foreground">{data.dateLabel}</p>
+                            <p className="text-lg font-bold text-primary">HV: {data.hv?.toFixed(1)}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  {stats.userHandicapIndex !== null && (
+                    <ReferenceLine
+                      y={stats.userHandicapIndex}
+                      stroke="hsl(var(--muted-foreground))"
+                      strokeDasharray="5 5"
+                      strokeWidth={1.5}
+                      label={{
+                        value: `HI: ${stats.userHandicapIndex.toFixed(1)}`,
+                        position: "right",
+                        fill: "hsl(var(--muted-foreground))",
+                        fontSize: 11,
+                      }}
+                    />
+                  )}
+                  <Line
+                    type="monotone"
+                    dataKey="hv"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={{ fill: "hsl(var(--primary))", strokeWidth: 0, r: 4 }}
+                    activeDot={{ r: 6, strokeWidth: 0 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-xs text-muted-foreground text-center mt-3">
+              Linea punteada = tu Handicap Index oficial · Valores mas bajos = mejor rendimiento
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Best Round Details - Grid for 18 and 9 holes */}
       {(stats.bestRoundScore !== null || stats.bestRound9Score !== null) && (
