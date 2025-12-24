@@ -427,9 +427,18 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
         rounds = rounds_response.data or []
         total_rounds = len(rounds)
 
+        # Calculate rounds this month
+        today = date.today()
+        month_start = date(today.year, today.month, 1).isoformat()
+        rounds_this_month = len([
+            r for r in rounds
+            if r.get("round_date", "") >= month_start
+        ])
+
         if total_rounds == 0:
             return UserStats(
                 total_rounds=0,
+                rounds_this_month=0,
                 user_handicap_index=user_handicap_index,
                 avg_strokes_par3=None,
                 avg_strokes_par4=None,
@@ -734,6 +743,7 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
 
         return UserStats(
             total_rounds=total_rounds,
+            rounds_this_month=rounds_this_month,
             user_handicap_index=user_handicap_index,
             avg_strokes_par3=round(avg_par3, 2) if avg_par3 else None,
             avg_strokes_par4=round(avg_par4, 2) if avg_par4 else None,

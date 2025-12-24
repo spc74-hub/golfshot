@@ -246,6 +246,7 @@ class SavedPlayerResponse(BaseModel):
 # User Statistics schemas
 class UserStats(BaseModel):
     total_rounds: int
+    rounds_this_month: int = 0  # Rounds completed this month
     user_handicap_index: Optional[float] = None  # User's official handicap index
     avg_strokes_par3: Optional[float] = None
     avg_strokes_par4: Optional[float] = None
