@@ -11,6 +11,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   TrendingUp,
   Award,
   BarChart3,
@@ -98,10 +105,26 @@ function formatHvpVsHandicap(
   );
 }
 
+type HolesFilter = "all" | "9" | "18";
+
 export function Stats() {
   const { data: stats, isLoading, error } = useUserStats();
   const { data: rounds } = useRounds();
   const [timeRange, setTimeRange] = useState<TimeRange>("1y");
+  const [courseFilter, setCourseFilter] = useState<string>("all");
+  const [holesFilter, setHolesFilter] = useState<HolesFilter>("all");
+
+  // Get unique courses for filter dropdown
+  const availableCourses = useMemo(() => {
+    if (!rounds) return [];
+    const courses = new Set<string>();
+    rounds.forEach((r) => {
+      if (r.isFinished && r.virtualHandicap != null) {
+        courses.add(r.courseName);
+      }
+    });
+    return Array.from(courses).sort();
+  }, [rounds]);
 
   // Prepare chart data from finished rounds with virtual handicap
   const chartData = useMemo(() => {
@@ -128,13 +151,21 @@ export function Stats() {
     const filteredRounds = rounds
       .filter((r) => {
         if (!r.isFinished || r.virtualHandicap == null) return false;
-        if (!cutoffDate) return true;
-        try {
-          const roundDate = parseISO(r.roundDate);
-          return isAfter(roundDate, cutoffDate);
-        } catch {
-          return false;
+        // Time filter
+        if (cutoffDate) {
+          try {
+            const roundDate = parseISO(r.roundDate);
+            if (!isAfter(roundDate, cutoffDate)) return false;
+          } catch {
+            return false;
+          }
         }
+        // Course filter
+        if (courseFilter !== "all" && r.courseName !== courseFilter) return false;
+        // Holes filter
+        if (holesFilter === "18" && r.courseLength !== "18") return false;
+        if (holesFilter === "9" && r.courseLength === "18") return false;
+        return true;
       })
       .map((r) => {
         const date = parseISO(r.roundDate);
@@ -153,7 +184,7 @@ export function Stats() {
       .sort((a, b) => a.date.localeCompare(b.date));
 
     return filteredRounds;
-  }, [rounds, timeRange]);
+  }, [rounds, timeRange, courseFilter, holesFilter]);
 
   if (isLoading) {
     return (
@@ -385,6 +416,32 @@ export function Stats() {
                   Todo
                 </Button>
               </div>
+            </div>
+            {/* Filters row */}
+            <div className="flex flex-wrap gap-3">
+              <Select value={courseFilter} onValueChange={setCourseFilter}>
+                <SelectTrigger className="w-[180px] h-8 text-sm">
+                  <SelectValue placeholder="Campo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los campos</SelectItem>
+                  {availableCourses.map((course) => (
+                    <SelectItem key={course} value={course}>
+                      {course}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={holesFilter} onValueChange={(v) => setHolesFilter(v as HolesFilter)}>
+                <SelectTrigger className="w-[120px] h-8 text-sm">
+                  <SelectValue placeholder="Hoyos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="18">18 hoyos</SelectItem>
+                  <SelectItem value="9">9 hoyos</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardHeader>
           <CardContent>
