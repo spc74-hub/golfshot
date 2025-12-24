@@ -186,6 +186,13 @@ export function Stats() {
     return filteredRounds;
   }, [rounds, timeRange, courseFilter, holesFilter]);
 
+  // Calculate average HV from filtered chart data
+  const avgHV = useMemo(() => {
+    if (chartData.length === 0) return null;
+    const sum = chartData.reduce((acc, d) => acc + d.hv, 0);
+    return sum / chartData.length;
+  }, [chartData]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -501,6 +508,20 @@ export function Stats() {
                       }}
                     />
                   )}
+                  {avgHV !== null && (
+                    <ReferenceLine
+                      y={avgHV}
+                      stroke="#3b82f6"
+                      strokeDasharray="3 3"
+                      strokeWidth={1.5}
+                      label={{
+                        value: `Media: ${avgHV.toFixed(1)}`,
+                        position: "left",
+                        fill: "#3b82f6",
+                        fontSize: 11,
+                      }}
+                    />
+                  )}
                   {/* Base gray line */}
                   <Line
                     type="monotone"
@@ -549,7 +570,14 @@ export function Stats() {
                 <span className="inline-block w-3 h-3 rounded-full bg-red-500"></span>
                 Peor que HI
               </span>
-              <span>Linea punteada = Handicap Index</span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-6 border-t-2 border-dashed border-muted-foreground"></span>
+                HI
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-6 border-t-2 border-dashed border-blue-500"></span>
+                Media
+              </span>
             </div>
           </CardContent>
         </Card>
