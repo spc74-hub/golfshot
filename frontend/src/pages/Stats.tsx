@@ -1,6 +1,13 @@
 import { useState, useMemo } from "react";
-import { useUserStats } from "@/hooks/useStats";
+import { useUserStats, useUserStatsFiltered, useStatsComparison } from "@/hooks/useStats";
 import { useRounds } from "@/hooks/useRounds";
+import {
+  useHandicapHistory,
+  useCreateHandicapHistory,
+  useUpdateHandicapHistory,
+  useDeleteHandicapHistory,
+} from "@/hooks/useHandicapHistory";
+import type { StatsPeriod, StatsFilters } from "@/types";
 import {
   Card,
   CardContent,
@@ -10,6 +17,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -18,6 +27,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   TrendingUp,
   Award,
   BarChart3,
@@ -25,8 +43,17 @@ import {
   Calendar,
   MapPin,
   User,
+  Plus,
+  Pencil,
+  Trash2,
+  History,
+  Filter,
+  ArrowDownRight,
+  ArrowUpRight,
+  Minus,
 } from "lucide-react";
 import { format, parseISO, subMonths, subYears, isAfter } from "date-fns";
+import type { HandicapHistory } from "@/types";
 import { es } from "date-fns/locale";
 import {
   Line,
@@ -107,12 +134,132 @@ function formatHvpVsHandicap(
 
 type HolesFilter = "all" | "9" | "18";
 
+// Get current year and previous years for year filter
+const currentYear = new Date().getFullYear();
+const yearOptions = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3];
+
 export function Stats() {
-  const { data: stats, isLoading, error } = useUserStats();
   const { data: rounds } = useRounds();
+  const { data: handicapHistory, isLoading: hiLoading } = useHandicapHistory();
+  const createHI = useCreateHandicapHistory();
+  const updateHI = useUpdateHandicapHistory();
+  const deleteHI = useDeleteHandicapHistory();
+
+  // Global filter state
+  const [globalPeriod, setGlobalPeriod] = useState<StatsPeriod | "year">("all");
+  const [globalYear, setGlobalYear] = useState<number | undefined>(undefined);
+  const [showComparison, setShowComparison] = useState(false);
+  const [comparePeriod, setComparePeriod] = useState<StatsPeriod>("1y");
+
+  // Build filters object
+  const filters: StatsFilters = useMemo(() => {
+    if (globalPeriod === "year" && globalYear) {
+      return { year: globalYear };
+    }
+    if (globalPeriod !== "all" && globalPeriod !== "year") {
+      return { period: globalPeriod };
+    }
+    return {};
+  }, [globalPeriod, globalYear]);
+
+  // Use filtered stats when filters are active
+  const hasFilters = globalPeriod !== "all";
+  const { data: baseStats, isLoading: baseLoading, error: baseError } = useUserStats();
+  const { data: filteredStats, isLoading: filteredLoading, error: filteredError } = useUserStatsFiltered(
+    hasFilters ? filters : undefined
+  );
+
+  // Use comparison when enabled
+  const { data: comparison } = useStatsComparison(
+    {
+      period1: globalPeriod === "year" ? "all" : (globalPeriod === "all" ? "3m" : globalPeriod),
+      period2: comparePeriod,
+      year1: globalPeriod === "year" ? globalYear : undefined,
+    },
+    showComparison
+  );
+
+  const stats = hasFilters ? filteredStats : baseStats;
+  const isLoading = hasFilters ? filteredLoading : baseLoading;
+  const error = hasFilters ? filteredError : baseError;
+
   const [timeRange, setTimeRange] = useState<TimeRange>("1y");
   const [courseFilter, setCourseFilter] = useState<string>("all");
   const [holesFilter, setHolesFilter] = useState<HolesFilter>("all");
+
+  // Handicap history dialog state
+  const [hiDialogOpen, setHiDialogOpen] = useState(false);
+  const [editingHI, setEditingHI] = useState<HandicapHistory | null>(null);
+  const [hiForm, setHiForm] = useState({
+    handicapIndex: "",
+    effectiveDate: format(new Date(), "yyyy-MM-dd"),
+    notes: "",
+  });
+
+  const handleHiSubmit = async () => {
+    const handicapIndex = parseFloat(hiForm.handicapIndex);
+    if (isNaN(handicapIndex) || handicapIndex < -10 || handicapIndex > 54) {
+      return;
+    }
+
+    try {
+      if (editingHI) {
+        await updateHI.mutateAsync({
+          id: editingHI.id,
+          input: {
+            handicapIndex,
+            effectiveDate: hiForm.effectiveDate,
+            notes: hiForm.notes || undefined,
+          },
+        });
+      } else {
+        await createHI.mutateAsync({
+          handicapIndex,
+          effectiveDate: hiForm.effectiveDate,
+          notes: hiForm.notes || undefined,
+        });
+      }
+      setHiDialogOpen(false);
+      setEditingHI(null);
+      setHiForm({
+        handicapIndex: "",
+        effectiveDate: format(new Date(), "yyyy-MM-dd"),
+        notes: "",
+      });
+    } catch (e) {
+      console.error("Error saving HI:", e);
+    }
+  };
+
+  const handleEditHI = (entry: HandicapHistory) => {
+    setEditingHI(entry);
+    setHiForm({
+      handicapIndex: entry.handicapIndex.toString(),
+      effectiveDate: entry.effectiveDate,
+      notes: entry.notes || "",
+    });
+    setHiDialogOpen(true);
+  };
+
+  const handleDeleteHI = async (id: string) => {
+    if (confirm("¿Eliminar este registro de handicap?")) {
+      try {
+        await deleteHI.mutateAsync(id);
+      } catch (e) {
+        console.error("Error deleting HI:", e);
+      }
+    }
+  };
+
+  const handleNewHI = () => {
+    setEditingHI(null);
+    setHiForm({
+      handicapIndex: "",
+      effectiveDate: format(new Date(), "yyyy-MM-dd"),
+      notes: "",
+    });
+    setHiDialogOpen(true);
+  };
 
   // Get unique courses for filter dropdown
   const availableCourses = useMemo(() => {
@@ -232,14 +379,130 @@ export function Stats() {
     );
   }
 
+  // Helper to get period label
+  const getPeriodLabel = () => {
+    if (globalPeriod === "year" && globalYear) return `Ano ${globalYear}`;
+    switch (globalPeriod) {
+      case "1m": return "Ultimo mes";
+      case "3m": return "Ultimos 3 meses";
+      case "6m": return "Ultimos 6 meses";
+      case "1y": return "Ultimo ano";
+      default: return "Todo el tiempo";
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Mis Estadisticas</h1>
-        <p className="text-muted-foreground">
-          Analiza tu rendimiento en el campo
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Mis Estadisticas</h1>
+          <p className="text-muted-foreground">
+            Analiza tu rendimiento en el campo
+          </p>
+        </div>
+
+        {/* Global Period Filter */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <Select
+            value={globalPeriod}
+            onValueChange={(val) => {
+              setGlobalPeriod(val as StatsPeriod | "year");
+              if (val !== "year") setGlobalYear(undefined);
+            }}
+          >
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Periodo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todo</SelectItem>
+              <SelectItem value="1m">1 mes</SelectItem>
+              <SelectItem value="3m">3 meses</SelectItem>
+              <SelectItem value="6m">6 meses</SelectItem>
+              <SelectItem value="1y">1 ano</SelectItem>
+              <SelectItem value="year">Ano...</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {globalPeriod === "year" && (
+            <Select
+              value={globalYear?.toString() ?? ""}
+              onValueChange={(val) => setGlobalYear(parseInt(val))}
+            >
+              <SelectTrigger className="w-[100px]">
+                <SelectValue placeholder="Ano" />
+              </SelectTrigger>
+              <SelectContent>
+                {yearOptions.map((y) => (
+                  <SelectItem key={y} value={y.toString()}>
+                    {y}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {hasFilters && (
+            <Badge variant="secondary" className="text-xs">
+              {getPeriodLabel()}
+            </Badge>
+          )}
+        </div>
       </div>
+
+      {/* Period Comparison Toggle */}
+      {hasFilters && (
+        <Card className="bg-muted/30">
+          <CardContent className="py-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="showComparison"
+                  checked={showComparison}
+                  onChange={(e) => setShowComparison(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <Label htmlFor="showComparison" className="text-sm cursor-pointer">
+                  Comparar con:
+                </Label>
+              </div>
+              {showComparison && (
+                <Select
+                  value={comparePeriod}
+                  onValueChange={(val) => setComparePeriod(val as StatsPeriod)}
+                >
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="3m">3 meses</SelectItem>
+                    <SelectItem value="6m">6 meses</SelectItem>
+                    <SelectItem value="1y">1 ano</SelectItem>
+                    <SelectItem value="all">Todo</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              {showComparison && comparison && (
+                <div className="flex gap-4 text-sm">
+                  {comparison.diffAvgStrokes18holes !== null && (
+                    <span className={comparison.diffAvgStrokes18holes < 0 ? "text-green-600" : comparison.diffAvgStrokes18holes > 0 ? "text-red-500" : ""}>
+                      {comparison.diffAvgStrokes18holes < 0 ? <ArrowDownRight className="inline h-4 w-4" /> : comparison.diffAvgStrokes18holes > 0 ? <ArrowUpRight className="inline h-4 w-4" /> : <Minus className="inline h-4 w-4" />}
+                      {Math.abs(comparison.diffAvgStrokes18holes).toFixed(1)} golpes
+                    </span>
+                  )}
+                  {comparison.diffHvpTotal !== null && (
+                    <span className={comparison.diffHvpTotal < 0 ? "text-green-600" : comparison.diffHvpTotal > 0 ? "text-red-500" : ""}>
+                      {comparison.diffHvpTotal < 0 ? <ArrowDownRight className="inline h-4 w-4" /> : comparison.diffHvpTotal > 0 ? <ArrowUpRight className="inline h-4 w-4" /> : <Minus className="inline h-4 w-4" />}
+                      {Math.abs(comparison.diffHvpTotal).toFixed(1)} HVP
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Overview Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -325,6 +588,169 @@ export function Stats() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Handicap Index History */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Historial de Handicap Index
+              </CardTitle>
+              <CardDescription>
+                Registra los cambios en tu handicap oficial para comparaciones precisas
+              </CardDescription>
+            </div>
+            <Dialog open={hiDialogOpen} onOpenChange={setHiDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" onClick={handleNewHI}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Nuevo
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingHI ? "Editar Handicap Index" : "Registrar Handicap Index"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Introduce tu nuevo Handicap Index oficial y la fecha desde la que es vigente.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="handicapIndex">Handicap Index</Label>
+                    <Input
+                      id="handicapIndex"
+                      type="number"
+                      step="0.1"
+                      min="-10"
+                      max="54"
+                      placeholder="Ej: 18.5"
+                      value={hiForm.handicapIndex}
+                      onChange={(e) =>
+                        setHiForm({ ...hiForm, handicapIndex: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="effectiveDate">Fecha de vigencia</Label>
+                    <Input
+                      id="effectiveDate"
+                      type="date"
+                      value={hiForm.effectiveDate}
+                      onChange={(e) =>
+                        setHiForm({ ...hiForm, effectiveDate: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Notas (opcional)</Label>
+                    <Input
+                      id="notes"
+                      placeholder="Ej: Actualizacion de la RFEG"
+                      value={hiForm.notes}
+                      onChange={(e) =>
+                        setHiForm({ ...hiForm, notes: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setHiDialogOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleHiSubmit}
+                    disabled={
+                      createHI.isPending ||
+                      updateHI.isPending ||
+                      !hiForm.handicapIndex ||
+                      !hiForm.effectiveDate
+                    }
+                  >
+                    {createHI.isPending || updateHI.isPending
+                      ? "Guardando..."
+                      : "Guardar"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {hiLoading ? (
+            <div className="text-center py-4 text-muted-foreground">
+              Cargando historial...
+            </div>
+          ) : !handicapHistory || handicapHistory.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground">
+              <History className="h-10 w-10 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No hay historial de handicap registrado</p>
+              <p className="text-xs mt-1">
+                Registra tu handicap para comparar tu rendimiento con precision
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {handicapHistory.slice(0, 5).map((entry, index) => (
+                <div
+                  key={entry.id}
+                  className={`flex items-center justify-between p-3 rounded-lg ${
+                    index === 0 ? "bg-primary/10" : "bg-muted/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <span className="text-xl font-bold">
+                        {entry.handicapIndex.toFixed(1)}
+                      </span>
+                      {index === 0 && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          Actual
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <div>Desde {format(parseISO(entry.effectiveDate), "d MMM yyyy", { locale: es })}</div>
+                      {entry.notes && (
+                        <div className="text-xs">{entry.notes}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleEditHI(entry)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteHI(entry.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {handicapHistory.length > 5 && (
+                <p className="text-xs text-center text-muted-foreground pt-2">
+                  Mostrando los 5 mas recientes de {handicapHistory.length} registros
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* HVP by Period */}
       <Card>

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel
-from app.models.schemas import UserResponse, UserUpdate, UserStats, UserWithStats, UserPermissionsUpdate
+from app.models.schemas import UserResponse, UserUpdate, UserStats, UserWithStats, UserPermissionsUpdate, UserStatsExtended, StatsComparisonResponse
 from app.services.supabase import get_supabase_client, get_supabase_admin_client
 from app.dependencies import get_current_user, get_admin_user, get_owner_user
-from typing import Dict, Any
+from typing import Dict, Any, Literal, Optional
 from datetime import datetime, date
+from dateutil.relativedelta import relativedelta
 
 
 class ResetPasswordRequest(BaseModel):
@@ -776,6 +777,544 @@ async def get_my_stats(current_user: UserResponse = Depends(get_current_user)):
             triple_or_worse_pct=triple_or_worse_pct,
             # GIR percentage
             gir_pct=gir_pct,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.get("/me/stats/filtered", response_model=UserStatsExtended)
+async def get_my_stats_filtered(
+    current_user: UserResponse = Depends(get_current_user),
+    period: Optional[Literal["1m", "3m", "6m", "1y", "all"]] = Query("all"),
+    year: Optional[int] = Query(None, description="Specific year to filter by"),
+    course_id: Optional[str] = Query(None, description="Filter by course ID"),
+    course_length: Optional[Literal["9", "18", "all"]] = Query("all"),
+):
+    """
+    Get statistics for the current user with period filters.
+    Calculates target strokes based on HI + Slope + CR for each round.
+    """
+    supabase = get_supabase_client()
+
+    try:
+        # Calculate date range based on period
+        today = date.today()
+        start_date = None
+        period_label = "Todo el tiempo"
+
+        if year:
+            start_date = date(year, 1, 1)
+            end_date = date(year, 12, 31)
+            period_label = f"Ano {year}"
+        elif period == "1m":
+            start_date = today - relativedelta(months=1)
+            period_label = "Ultimo mes"
+        elif period == "3m":
+            start_date = today - relativedelta(months=3)
+            period_label = "Ultimos 3 meses"
+        elif period == "6m":
+            start_date = today - relativedelta(months=6)
+            period_label = "Ultimos 6 meses"
+        elif period == "1y":
+            start_date = today - relativedelta(years=1)
+            period_label = "Ultimo ano"
+
+        # Get user's handicap history
+        hi_history_response = (
+            supabase.table("handicap_history")
+            .select("*")
+            .eq("user_id", current_user.id)
+            .order("effective_date", desc=True)
+            .execute()
+        )
+        hi_history = hi_history_response.data or []
+
+        # Fallback to saved_players handicap if no history
+        user_handicap_index = None
+        if hi_history:
+            user_handicap_index = hi_history[0].get("handicap_index")
+        else:
+            saved_players_response = (
+                supabase.table("saved_players")
+                .select("handicap_index")
+                .eq("user_id", current_user.id)
+                .order("created_at", desc=False)
+                .limit(1)
+                .execute()
+            )
+            if saved_players_response.data:
+                user_handicap_index = saved_players_response.data[0].get("handicap_index")
+
+        # Get finished rounds with filters
+        query = (
+            supabase.table("rounds")
+            .select("*")
+            .eq("user_id", current_user.id)
+            .eq("is_finished", True)
+        )
+
+        if course_id:
+            query = query.eq("course_id", course_id)
+
+        if course_length == "9":
+            query = query.in_("course_length", ["front9", "back9"])
+        elif course_length == "18":
+            query = query.eq("course_length", "18")
+
+        if start_date:
+            query = query.gte("round_date", start_date.isoformat())
+            if year:
+                query = query.lte("round_date", end_date.isoformat())
+
+        rounds_response = query.order("round_date", desc=True).execute()
+        rounds = rounds_response.data or []
+
+        total_rounds = len(rounds)
+        rounds_in_period = total_rounds
+
+        if total_rounds == 0:
+            return UserStatsExtended(
+                total_rounds=0,
+                rounds_this_month=0,
+                user_handicap_index=user_handicap_index,
+                avg_strokes_par3=None,
+                avg_strokes_par4=None,
+                avg_strokes_par5=None,
+                avg_putts_per_round=None,
+                avg_putts_9holes=None,
+                avg_putts_18holes=None,
+                avg_strokes_9holes=None,
+                avg_strokes_18holes=None,
+                avg_stableford_points=None,
+                hvp_total=None,
+                hvp_month=None,
+                hvp_quarter=None,
+                hvp_year=None,
+                best_round_score=None,
+                best_round_date=None,
+                best_round_course=None,
+                best_round_9_score=None,
+                best_round_9_date=None,
+                best_round_9_course=None,
+                avg_target_strokes_9holes=None,
+                avg_target_strokes_18holes=None,
+                strokes_gap_9holes=None,
+                strokes_gap_18holes=None,
+                period_label=period_label,
+                rounds_in_period=0,
+            )
+
+        # Get all courses for hole data
+        courses_response = supabase.table("courses").select("*").execute()
+        courses = {c["id"]: c for c in (courses_response.data or [])}
+
+        # Helper function to get HI at a specific date
+        def get_hi_at_date(round_date_str: str) -> float | None:
+            if not hi_history:
+                return user_handicap_index
+            try:
+                round_date = datetime.strptime(round_date_str, "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                return user_handicap_index
+            for entry in hi_history:
+                try:
+                    effective = datetime.strptime(entry["effective_date"], "%Y-%m-%d").date()
+                    if effective <= round_date:
+                        return entry.get("handicap_index")
+                except (ValueError, TypeError):
+                    continue
+            return user_handicap_index
+
+        # Calculate statistics
+        par3_strokes = []
+        par4_strokes = []
+        par5_strokes = []
+        total_putts = []
+        putts_9holes = []
+        putts_18holes = []
+        strokes_9holes = []
+        strokes_18holes = []
+        stableford_points_normalized = []
+        hvp_data = []
+        target_strokes_9holes = []
+        target_strokes_18holes = []
+        best_score_18 = None
+        best_score_18_info = None
+        best_score_9 = None
+        best_score_9_info = None
+        # Score distribution counters
+        eagles_or_better = 0
+        birdies = 0
+        pars = 0
+        bogeys = 0
+        double_bogeys = 0
+        triple_or_worse = 0
+        total_holes_for_distribution = 0
+        # GIR tracking
+        gir_hit = 0
+        gir_total = 0
+
+        # Get current date info for period filtering
+        current_month_start = date(today.year, today.month, 1)
+        current_quarter = (today.month - 1) // 3
+        current_quarter_start = date(today.year, current_quarter * 3 + 1, 1)
+        current_year_start = date(today.year, 1, 1)
+
+        # Calculate rounds this month (for display, not filtered)
+        month_start = date(today.year, today.month, 1).isoformat()
+        rounds_this_month = len([
+            r for r in rounds
+            if r.get("round_date", "") >= month_start
+        ])
+
+        for round_data in rounds:
+            course = courses.get(round_data.get("course_id"))
+            if not course:
+                continue
+
+            holes_data = {h["number"]: h for h in course.get("holes_data", [])}
+            players = round_data.get("players", [])
+            user_player = players[0] if players else None
+            if not user_player:
+                continue
+
+            scores = user_player.get("scores", {})
+            tee_box = user_player.get("tee_box", "")
+            round_date_str = round_data.get("round_date", "")
+
+            # Get tee info for course rating and slope
+            tees = course.get("tees", [])
+            tee_info = next((t for t in tees if t["name"] == tee_box), None)
+            course_rating = tee_info["rating"] if tee_info else 72.0
+            slope = tee_info["slope"] if tee_info else 113
+
+            # Get HI at the time of the round
+            hi_at_round = get_hi_at_date(round_date_str)
+            od_handicap_index = user_player.get("od_handicap_index", hi_at_round or 0)
+
+            # Determine which holes to count
+            course_length_val = round_data.get("course_length", "18")
+            if course_length_val == "front9":
+                holes_to_count = range(1, 10)
+            elif course_length_val == "back9":
+                holes_to_count = range(10, 19)
+            else:
+                holes_to_count = range(1, 19)
+
+            round_strokes = 0
+            round_putts = 0
+            round_stableford = 0
+            round_par = 0
+
+            for hole_num in holes_to_count:
+                hole_num_str = str(hole_num)
+                if hole_num_str not in scores:
+                    continue
+
+                score = scores[hole_num_str]
+                strokes = score.get("strokes", 0)
+                putts = score.get("putts", 0)
+
+                hole_data = holes_data.get(hole_num)
+                if not hole_data:
+                    continue
+
+                par = hole_data.get("par", 4)
+                handicap = hole_data.get("handicap", 1)
+                round_par += par
+
+                if par == 3:
+                    par3_strokes.append(strokes)
+                elif par == 4:
+                    par4_strokes.append(strokes)
+                elif par == 5:
+                    par5_strokes.append(strokes)
+
+                round_strokes += strokes
+                round_putts += putts
+
+                # Score distribution
+                gross_diff = strokes - par
+                total_holes_for_distribution += 1
+                if gross_diff <= -2:
+                    eagles_or_better += 1
+                elif gross_diff == -1:
+                    birdies += 1
+                elif gross_diff == 0:
+                    pars += 1
+                elif gross_diff == 1:
+                    bogeys += 1
+                elif gross_diff == 2:
+                    double_bogeys += 1
+                else:
+                    triple_or_worse += 1
+
+                # GIR tracking
+                if putts > 0:
+                    strokes_to_green = strokes - putts
+                    target_strokes_for_gir = par - 2
+                    gir_total += 1
+                    if strokes_to_green <= target_strokes_for_gir:
+                        gir_hit += 1
+
+                # Stableford calculation
+                playing_hcp = user_player.get("playing_handicap", 0)
+                strokes_received = 0
+                if playing_hcp > 0:
+                    base_strokes = playing_hcp // 18
+                    remainder = playing_hcp % 18
+                    strokes_received = base_strokes + (1 if handicap <= remainder else 0)
+
+                net_score = strokes - strokes_received
+                diff = net_score - par
+
+                if diff <= -3:
+                    points = 5
+                elif diff == -2:
+                    points = 4
+                elif diff == -1:
+                    points = 3
+                elif diff == 0:
+                    points = 2
+                elif diff == 1:
+                    points = 1
+                else:
+                    points = 0
+
+                round_stableford += points
+
+            # Calculate target strokes for this round
+            # Target = Par + (HI * Slope / 113) + (CR - Par)
+            # Simplified: Target = CR + (HI * Slope / 113)
+            if hi_at_round is not None and round_par > 0:
+                # For 18 holes, use full formula
+                # For 9 holes, use half
+                hi_strokes = (hi_at_round * slope) / 113
+                is_9_hole_round = course_length_val in ["front9", "back9"]
+
+                if is_9_hole_round:
+                    # For 9 holes: target = (CR/2) + (hi_strokes/2)
+                    target = (course_rating / 2) + (hi_strokes / 2)
+                    target_strokes_9holes.append(target)
+                else:
+                    target = course_rating + hi_strokes
+                    target_strokes_18holes.append(target)
+
+            # Track round totals
+            is_9_hole_round = course_length_val in ["front9", "back9"]
+            if is_9_hole_round:
+                strokes_9holes.append(round_strokes)
+                if round_putts > 0:
+                    putts_9holes.append(round_putts)
+                if round_strokes > 0 and (best_score_9 is None or round_strokes < best_score_9):
+                    best_score_9 = round_strokes
+                    best_score_9_info = {
+                        "score": round_strokes,
+                        "date": round_data.get("round_date"),
+                        "course": round_data.get("course_name"),
+                    }
+            else:
+                strokes_18holes.append(round_strokes)
+                if round_putts > 0:
+                    putts_18holes.append(round_putts)
+                if round_strokes > 0 and (best_score_18 is None or round_strokes < best_score_18):
+                    best_score_18 = round_strokes
+                    best_score_18_info = {
+                        "score": round_strokes,
+                        "date": round_data.get("round_date"),
+                        "course": round_data.get("course_name"),
+                    }
+
+            if round_putts > 0:
+                total_putts.append(round_putts)
+
+            if round_stableford > 0:
+                if is_9_hole_round:
+                    normalized_points = round_stableford * 2
+                else:
+                    normalized_points = round_stableford
+                if round_data.get("game_mode") == "stableford":
+                    stableford_points_normalized.append(normalized_points)
+
+            # HVP calculation
+            stored_vh = round_data.get("virtual_handicap")
+            if stored_vh is not None:
+                hvp_value = stored_vh
+            elif round_stableford > 0 and od_handicap_index:
+                if is_9_hole_round:
+                    normalized_stableford = round_stableford * 2
+                else:
+                    normalized_stableford = round_stableford
+                hvp_value = od_handicap_index - (normalized_stableford - 36)
+            else:
+                hvp_value = None
+
+            if hvp_value is not None:
+                try:
+                    round_date_parsed = datetime.strptime(round_date_str, "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    round_date_parsed = None
+                hvp_data.append((hvp_value, round_date_parsed))
+
+        # Calculate averages
+        avg_par3 = sum(par3_strokes) / len(par3_strokes) if par3_strokes else None
+        avg_par4 = sum(par4_strokes) / len(par4_strokes) if par4_strokes else None
+        avg_par5 = sum(par5_strokes) / len(par5_strokes) if par5_strokes else None
+        avg_putts = sum(total_putts) / len(total_putts) if total_putts else None
+        avg_putts_9 = sum(putts_9holes) / len(putts_9holes) if putts_9holes else None
+        avg_putts_18 = sum(putts_18holes) / len(putts_18holes) if putts_18holes else None
+        avg_9holes = sum(strokes_9holes) / len(strokes_9holes) if strokes_9holes else None
+        avg_18holes = sum(strokes_18holes) / len(strokes_18holes) if strokes_18holes else None
+        avg_stableford = sum(stableford_points_normalized) / len(stableford_points_normalized) if stableford_points_normalized else None
+
+        # Calculate target strokes averages
+        avg_target_9 = sum(target_strokes_9holes) / len(target_strokes_9holes) if target_strokes_9holes else None
+        avg_target_18 = sum(target_strokes_18holes) / len(target_strokes_18holes) if target_strokes_18holes else None
+
+        # Calculate gaps
+        strokes_gap_9 = None
+        strokes_gap_18 = None
+        if avg_9holes is not None and avg_target_9 is not None:
+            strokes_gap_9 = round(avg_9holes - avg_target_9, 1)
+        if avg_18holes is not None and avg_target_18 is not None:
+            strokes_gap_18 = round(avg_18holes - avg_target_18, 1)
+
+        # Calculate HVP for different periods
+        hvp_total = None
+        hvp_month = None
+        hvp_quarter = None
+        hvp_year = None
+
+        if hvp_data:
+            all_hvp_values = [hvp for hvp, _ in hvp_data]
+            hvp_total = sum(all_hvp_values) / len(all_hvp_values)
+            month_hvp = [hvp for hvp, d in hvp_data if d and d >= current_month_start]
+            quarter_hvp = [hvp for hvp, d in hvp_data if d and d >= current_quarter_start]
+            year_hvp = [hvp for hvp, d in hvp_data if d and d >= current_year_start]
+            if month_hvp:
+                hvp_month = sum(month_hvp) / len(month_hvp)
+            if quarter_hvp:
+                hvp_quarter = sum(quarter_hvp) / len(quarter_hvp)
+            if year_hvp:
+                hvp_year = sum(year_hvp) / len(year_hvp)
+
+        # Score distribution percentages
+        eagles_pct = None
+        birdies_pct = None
+        pars_pct = None
+        bogeys_pct = None
+        double_bogeys_pct = None
+        triple_or_worse_pct = None
+        if total_holes_for_distribution > 0:
+            eagles_pct = round((eagles_or_better / total_holes_for_distribution) * 100, 1)
+            birdies_pct = round((birdies / total_holes_for_distribution) * 100, 1)
+            pars_pct = round((pars / total_holes_for_distribution) * 100, 1)
+            bogeys_pct = round((bogeys / total_holes_for_distribution) * 100, 1)
+            double_bogeys_pct = round((double_bogeys / total_holes_for_distribution) * 100, 1)
+            triple_or_worse_pct = round((triple_or_worse / total_holes_for_distribution) * 100, 1)
+
+        gir_pct = round((gir_hit / gir_total) * 100, 1) if gir_total > 0 else None
+
+        return UserStatsExtended(
+            total_rounds=total_rounds,
+            rounds_this_month=rounds_this_month,
+            user_handicap_index=user_handicap_index,
+            avg_strokes_par3=round(avg_par3, 2) if avg_par3 else None,
+            avg_strokes_par4=round(avg_par4, 2) if avg_par4 else None,
+            avg_strokes_par5=round(avg_par5, 2) if avg_par5 else None,
+            avg_putts_per_round=round(avg_putts, 2) if avg_putts else None,
+            avg_putts_9holes=round(avg_putts_9, 2) if avg_putts_9 else None,
+            avg_putts_18holes=round(avg_putts_18, 2) if avg_putts_18 else None,
+            avg_strokes_9holes=round(avg_9holes, 2) if avg_9holes else None,
+            avg_strokes_18holes=round(avg_18holes, 2) if avg_18holes else None,
+            avg_stableford_points=round(avg_stableford, 2) if avg_stableford else None,
+            hvp_total=round(hvp_total, 1) if hvp_total else None,
+            hvp_month=round(hvp_month, 1) if hvp_month else None,
+            hvp_quarter=round(hvp_quarter, 1) if hvp_quarter else None,
+            hvp_year=round(hvp_year, 1) if hvp_year else None,
+            best_round_score=best_score_18_info["score"] if best_score_18_info else None,
+            best_round_date=best_score_18_info["date"] if best_score_18_info else None,
+            best_round_course=best_score_18_info["course"] if best_score_18_info else None,
+            best_round_9_score=best_score_9_info["score"] if best_score_9_info else None,
+            best_round_9_date=best_score_9_info["date"] if best_score_9_info else None,
+            best_round_9_course=best_score_9_info["course"] if best_score_9_info else None,
+            eagles_or_better_pct=eagles_pct,
+            birdies_pct=birdies_pct,
+            pars_pct=pars_pct,
+            bogeys_pct=bogeys_pct,
+            double_bogeys_pct=double_bogeys_pct,
+            triple_or_worse_pct=triple_or_worse_pct,
+            gir_pct=gir_pct,
+            avg_target_strokes_9holes=round(avg_target_9, 1) if avg_target_9 else None,
+            avg_target_strokes_18holes=round(avg_target_18, 1) if avg_target_18 else None,
+            strokes_gap_9holes=strokes_gap_9,
+            strokes_gap_18holes=strokes_gap_18,
+            period_label=period_label,
+            rounds_in_period=rounds_in_period,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.get("/me/stats/compare", response_model=StatsComparisonResponse)
+async def compare_stats(
+    current_user: UserResponse = Depends(get_current_user),
+    period1: Literal["1m", "3m", "6m", "1y", "all"] = Query("3m", description="First period"),
+    period2: Literal["1m", "3m", "6m", "1y", "all"] = Query("1y", description="Second period to compare"),
+    year1: Optional[int] = Query(None, description="Specific year for period1"),
+    year2: Optional[int] = Query(None, description="Specific year for period2"),
+):
+    """
+    Compare statistics between two time periods.
+    Returns stats for both periods and the difference between them.
+    Negative differences in strokes/gap mean improvement (playing better).
+    """
+    from app.routers.users import get_my_stats_filtered
+
+    try:
+        # Get stats for both periods
+        stats1 = await get_my_stats_filtered(
+            current_user=current_user,
+            period=period1 if not year1 else "all",
+            year=year1,
+            course_id=None,
+            course_length="all",
+        )
+
+        stats2 = await get_my_stats_filtered(
+            current_user=current_user,
+            period=period2 if not year2 else "all",
+            year=year2,
+            course_id=None,
+            course_length="all",
+        )
+
+        # Calculate differences
+        def safe_diff(val1: Optional[float], val2: Optional[float]) -> Optional[float]:
+            if val1 is None or val2 is None:
+                return None
+            return round(val1 - val2, 2)
+
+        return StatsComparisonResponse(
+            period1=stats1,
+            period2=stats2,
+            diff_avg_strokes_9holes=safe_diff(stats1.avg_strokes_9holes, stats2.avg_strokes_9holes),
+            diff_avg_strokes_18holes=safe_diff(stats1.avg_strokes_18holes, stats2.avg_strokes_18holes),
+            diff_hvp_total=safe_diff(stats1.hvp_total, stats2.hvp_total),
+            diff_gir_pct=safe_diff(stats1.gir_pct, stats2.gir_pct),
+            diff_avg_putts_per_round=safe_diff(stats1.avg_putts_per_round, stats2.avg_putts_per_round),
+            diff_strokes_gap_9holes=safe_diff(stats1.strokes_gap_9holes, stats2.strokes_gap_9holes),
+            diff_strokes_gap_18holes=safe_diff(stats1.strokes_gap_18holes, stats2.strokes_gap_18holes),
         )
     except HTTPException:
         raise

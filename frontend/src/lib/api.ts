@@ -8,6 +8,10 @@ import type {
   UserWithStats,
   AdminStats,
   UserStats,
+  UserStatsExtended,
+  StatsFilters,
+  StatsComparisonResponse,
+  StatsComparisonParams,
   OwnerStats,
   OwnerRoundsResponse,
   ImportedRoundData,
@@ -19,6 +23,9 @@ import type {
   RoundTemplate,
   CreateRoundTemplateInput,
   UpdateRoundTemplateInput,
+  HandicapHistory,
+  CreateHandicapHistoryInput,
+  UpdateHandicapHistoryInput,
 } from "@/types";
 
 // Get API URL from environment or use default
@@ -239,6 +246,125 @@ export const usersApi = {
       tripleOrWorsePct: data.triple_or_worse_pct,
       // GIR percentage
       girPct: data.gir_pct,
+    };
+  },
+
+  getMyStatsFiltered: async (filters?: StatsFilters): Promise<UserStatsExtended> => {
+    // Build query params
+    const params = new URLSearchParams();
+    if (filters?.period) params.append("period", filters.period);
+    if (filters?.year) params.append("year", filters.year.toString());
+    if (filters?.courseId) params.append("course_id", filters.courseId);
+    if (filters?.courseLength) params.append("course_length", filters.courseLength);
+
+    const queryString = params.toString();
+    const url = `/users/me/stats/filtered${queryString ? `?${queryString}` : ""}`;
+
+    const data = await fetchWithAuth(url);
+    // Transform snake_case to camelCase
+    return {
+      totalRounds: data.total_rounds,
+      roundsThisMonth: data.rounds_this_month ?? 0,
+      userHandicapIndex: data.user_handicap_index,
+      avgStrokesPar3: data.avg_strokes_par3,
+      avgStrokesPar4: data.avg_strokes_par4,
+      avgStrokesPar5: data.avg_strokes_par5,
+      avgPuttsPerRound: data.avg_putts_per_round,
+      avgPutts9holes: data.avg_putts_9holes,
+      avgPutts18holes: data.avg_putts_18holes,
+      avgStrokes9holes: data.avg_strokes_9holes,
+      avgStrokes18holes: data.avg_strokes_18holes,
+      avgStablefordPoints: data.avg_stableford_points,
+      // HVP - Handicap Virtual Promedio
+      hvpTotal: data.hvp_total,
+      hvpMonth: data.hvp_month,
+      hvpQuarter: data.hvp_quarter,
+      hvpYear: data.hvp_year,
+      // Best 18-hole round
+      bestRoundScore: data.best_round_score,
+      bestRoundDate: data.best_round_date,
+      bestRoundCourse: data.best_round_course,
+      // Best 9-hole round
+      bestRound9Score: data.best_round_9_score,
+      bestRound9Date: data.best_round_9_date,
+      bestRound9Course: data.best_round_9_course,
+      // Score distribution percentages
+      eaglesOrBetterPct: data.eagles_or_better_pct,
+      birdiesPct: data.birdies_pct,
+      parsPct: data.pars_pct,
+      bogeysPct: data.bogeys_pct,
+      doubleBogeysPct: data.double_bogeys_pct,
+      tripleOrWorsePct: data.triple_or_worse_pct,
+      // GIR percentage
+      girPct: data.gir_pct,
+      // Extended fields
+      avgTargetStrokes9holes: data.avg_target_strokes_9holes,
+      avgTargetStrokes18holes: data.avg_target_strokes_18holes,
+      strokesGap9holes: data.strokes_gap_9holes,
+      strokesGap18holes: data.strokes_gap_18holes,
+      periodLabel: data.period_label,
+      roundsInPeriod: data.rounds_in_period ?? 0,
+    };
+  },
+
+  compareStats: async (params: StatsComparisonParams): Promise<StatsComparisonResponse> => {
+    const queryParams = new URLSearchParams();
+    queryParams.append("period1", params.period1);
+    queryParams.append("period2", params.period2);
+    if (params.year1) queryParams.append("year1", params.year1.toString());
+    if (params.year2) queryParams.append("year2", params.year2.toString());
+
+    const data = await fetchWithAuth(`/users/me/stats/compare?${queryParams.toString()}`);
+
+    // Transform UserStatsExtended for both periods
+    const transformExtended = (d: Record<string, unknown>): UserStatsExtended => ({
+      totalRounds: d.total_rounds as number,
+      roundsThisMonth: (d.rounds_this_month ?? 0) as number,
+      userHandicapIndex: d.user_handicap_index as number | null,
+      avgStrokesPar3: d.avg_strokes_par3 as number | null,
+      avgStrokesPar4: d.avg_strokes_par4 as number | null,
+      avgStrokesPar5: d.avg_strokes_par5 as number | null,
+      avgPuttsPerRound: d.avg_putts_per_round as number | null,
+      avgPutts9holes: d.avg_putts_9holes as number | null,
+      avgPutts18holes: d.avg_putts_18holes as number | null,
+      avgStrokes9holes: d.avg_strokes_9holes as number | null,
+      avgStrokes18holes: d.avg_strokes_18holes as number | null,
+      avgStablefordPoints: d.avg_stableford_points as number | null,
+      hvpTotal: d.hvp_total as number | null,
+      hvpMonth: d.hvp_month as number | null,
+      hvpQuarter: d.hvp_quarter as number | null,
+      hvpYear: d.hvp_year as number | null,
+      bestRoundScore: d.best_round_score as number | null,
+      bestRoundDate: d.best_round_date as string | null,
+      bestRoundCourse: d.best_round_course as string | null,
+      bestRound9Score: d.best_round_9_score as number | null,
+      bestRound9Date: d.best_round_9_date as string | null,
+      bestRound9Course: d.best_round_9_course as string | null,
+      eaglesOrBetterPct: d.eagles_or_better_pct as number | null,
+      birdiesPct: d.birdies_pct as number | null,
+      parsPct: d.pars_pct as number | null,
+      bogeysPct: d.bogeys_pct as number | null,
+      doubleBogeysPct: d.double_bogeys_pct as number | null,
+      tripleOrWorsePct: d.triple_or_worse_pct as number | null,
+      girPct: d.gir_pct as number | null,
+      avgTargetStrokes9holes: d.avg_target_strokes_9holes as number | null,
+      avgTargetStrokes18holes: d.avg_target_strokes_18holes as number | null,
+      strokesGap9holes: d.strokes_gap_9holes as number | null,
+      strokesGap18holes: d.strokes_gap_18holes as number | null,
+      periodLabel: d.period_label as string | null,
+      roundsInPeriod: (d.rounds_in_period ?? 0) as number,
+    });
+
+    return {
+      period1: transformExtended(data.period1 as Record<string, unknown>),
+      period2: transformExtended(data.period2 as Record<string, unknown>),
+      diffAvgStrokes9holes: data.diff_avg_strokes_9holes as number | null,
+      diffAvgStrokes18holes: data.diff_avg_strokes_18holes as number | null,
+      diffHvpTotal: data.diff_hvp_total as number | null,
+      diffGirPct: data.diff_gir_pct as number | null,
+      diffAvgPuttsPerRound: data.diff_avg_putts_per_round as number | null,
+      diffStrokesGap9holes: data.diff_strokes_gap_9holes as number | null,
+      diffStrokesGap18holes: data.diff_strokes_gap_18holes as number | null,
     };
   },
 };
@@ -710,5 +836,78 @@ export const templatesApi = {
   toggleFavorite: async (id: string): Promise<{ isFavorite: boolean }> => {
     const data = await fetchWithAuth(`/templates/${id}/favorite`, { method: "PATCH" });
     return { isFavorite: data.is_favorite };
+  },
+};
+
+// Transform backend HandicapHistory (snake_case) to frontend (camelCase)
+function transformHandicapHistory(data: Record<string, unknown>): HandicapHistory {
+  return {
+    id: data.id as string,
+    userId: data.user_id as string,
+    handicapIndex: data.handicap_index as number,
+    effectiveDate: data.effective_date as string,
+    notes: (data.notes ?? null) as string | null,
+    createdAt: data.created_at as string,
+  };
+}
+
+// Handicap History API (for tracking HI evolution over time)
+export const handicapHistoryApi = {
+  // Get all handicap history entries for current user
+  list: async (): Promise<HandicapHistory[]> => {
+    const data = await fetchWithAuth("/handicap-history/");
+    return (data as Record<string, unknown>[]).map(transformHandicapHistory);
+  },
+
+  // Get the current (most recent) handicap index
+  getCurrent: async (): Promise<HandicapHistory | null> => {
+    try {
+      const data = await fetchWithAuth("/handicap-history/current");
+      return transformHandicapHistory(data as Record<string, unknown>);
+    } catch {
+      return null;
+    }
+  },
+
+  // Get the handicap index effective at a specific date
+  getAtDate: async (date: string): Promise<HandicapHistory | null> => {
+    try {
+      const data = await fetchWithAuth(`/handicap-history/at-date/${date}`);
+      return transformHandicapHistory(data as Record<string, unknown>);
+    } catch {
+      return null;
+    }
+  },
+
+  // Create a new handicap history entry
+  create: async (input: CreateHandicapHistoryInput): Promise<HandicapHistory> => {
+    const data = await fetchWithAuth("/handicap-history/", {
+      method: "POST",
+      body: JSON.stringify({
+        handicap_index: input.handicapIndex,
+        effective_date: input.effectiveDate,
+        notes: input.notes,
+      }),
+    });
+    return transformHandicapHistory(data as Record<string, unknown>);
+  },
+
+  // Update a handicap history entry
+  update: async (id: string, input: UpdateHandicapHistoryInput): Promise<HandicapHistory> => {
+    const payload: Record<string, unknown> = {};
+    if (input.handicapIndex !== undefined) payload.handicap_index = input.handicapIndex;
+    if (input.effectiveDate !== undefined) payload.effective_date = input.effectiveDate;
+    if (input.notes !== undefined) payload.notes = input.notes;
+
+    const data = await fetchWithAuth(`/handicap-history/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return transformHandicapHistory(data as Record<string, unknown>);
+  },
+
+  // Delete a handicap history entry
+  delete: async (id: string): Promise<void> => {
+    await fetchWithAuth(`/handicap-history/${id}`, { method: "DELETE" });
   },
 };

@@ -421,3 +421,66 @@ export interface UpdateRoundTemplateInput {
   defaultTee?: string;
   isFavorite?: boolean;
 }
+
+// Handicap History types (for tracking HI evolution over time)
+export interface HandicapHistory {
+  id: string;
+  userId: string;
+  handicapIndex: number;
+  effectiveDate: string;  // ISO date string (YYYY-MM-DD)
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface CreateHandicapHistoryInput {
+  handicapIndex: number;
+  effectiveDate: string;  // ISO date string (YYYY-MM-DD)
+  notes?: string;
+}
+
+export interface UpdateHandicapHistoryInput {
+  handicapIndex?: number;
+  effectiveDate?: string;
+  notes?: string;
+}
+
+// Stats filter types (for period-based filtering)
+export type StatsPeriod = "1m" | "3m" | "6m" | "1y" | "all";
+
+export interface StatsFilters {
+  period?: StatsPeriod;
+  year?: number;  // Specific year (2025, 2024, etc.)
+  courseId?: string;
+  courseLength?: "9" | "18" | "all";
+}
+
+// Extended stats with period filtering and comparison
+export interface UserStatsExtended extends UserStats {
+  avgTargetStrokes9holes: number | null;
+  avgTargetStrokes18holes: number | null;
+  strokesGap9holes: number | null;
+  strokesGap18holes: number | null;
+  periodLabel: string | null;
+  roundsInPeriod: number;
+}
+
+// Stats comparison between two periods
+export interface StatsComparisonResponse {
+  period1: UserStatsExtended;
+  period2: UserStatsExtended;
+  // Differences (period1 - period2, negative = improvement)
+  diffAvgStrokes9holes: number | null;
+  diffAvgStrokes18holes: number | null;
+  diffHvpTotal: number | null;
+  diffGirPct: number | null;
+  diffAvgPuttsPerRound: number | null;
+  diffStrokesGap9holes: number | null;
+  diffStrokesGap18holes: number | null;
+}
+
+export interface StatsComparisonParams {
+  period1: StatsPeriod;
+  period2: StatsPeriod;
+  year1?: number;
+  year2?: number;
+}

@@ -335,3 +335,67 @@ class RoundTemplateResponse(BaseModel):
     is_favorite: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+# Handicap History schemas
+class HandicapHistoryCreate(BaseModel):
+    handicap_index: float = Field(ge=-10, le=54)
+    effective_date: str  # ISO date string (YYYY-MM-DD)
+    notes: Optional[str] = None
+
+
+class HandicapHistoryUpdate(BaseModel):
+    handicap_index: Optional[float] = Field(default=None, ge=-10, le=54)
+    effective_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class HandicapHistoryResponse(BaseModel):
+    id: str
+    user_id: str
+    handicap_index: float
+    effective_date: str
+    notes: Optional[str] = None
+    created_at: datetime
+
+
+# Stats request with filters
+class StatsFilters(BaseModel):
+    """Filters for statistics calculation"""
+    period: Optional[Literal["1m", "3m", "6m", "1y", "all"]] = "all"
+    year: Optional[int] = None  # Specific year (2025, 2024, etc.)
+    course_id: Optional[str] = None
+    course_length: Optional[Literal["9", "18", "all"]] = "all"
+
+
+class StatsComparison(BaseModel):
+    """Compare stats between two periods"""
+    period1: StatsFilters
+    period2: StatsFilters
+
+
+class UserStatsExtended(UserStats):
+    """Extended stats with target strokes calculation"""
+    # Target strokes based on HI + Slope + CR
+    avg_target_strokes_9holes: Optional[float] = None
+    avg_target_strokes_18holes: Optional[float] = None
+    # Gap between actual and target
+    strokes_gap_9holes: Optional[float] = None  # Actual - Target
+    strokes_gap_18holes: Optional[float] = None
+    # Period info
+    period_label: Optional[str] = None
+    rounds_in_period: int = 0
+
+
+class StatsComparisonResponse(BaseModel):
+    """Response for comparing stats between two periods"""
+    period1: UserStatsExtended
+    period2: UserStatsExtended
+    # Differences (period1 - period2, negative = improvement)
+    diff_avg_strokes_9holes: Optional[float] = None
+    diff_avg_strokes_18holes: Optional[float] = None
+    diff_hvp_total: Optional[float] = None
+    diff_gir_pct: Optional[float] = None
+    diff_avg_putts_per_round: Optional[float] = None
+    diff_strokes_gap_9holes: Optional[float] = None
+    diff_strokes_gap_18holes: Optional[float] = None
