@@ -309,10 +309,8 @@ export const usersApi = {
 
   compareStats: async (params: StatsComparisonParams): Promise<StatsComparisonResponse> => {
     const queryParams = new URLSearchParams();
-    queryParams.append("period1", params.period1);
-    queryParams.append("period2", params.period2);
-    if (params.year1) queryParams.append("year1", params.year1.toString());
-    if (params.year2) queryParams.append("year2", params.year2.toString());
+    queryParams.append("period", params.period);
+    if (params.year) queryParams.append("year", params.year.toString());
 
     const data = await fetchWithAuth(`/users/me/stats/compare?${queryParams.toString()}`);
 

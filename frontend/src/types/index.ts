@@ -479,8 +479,6 @@ export interface StatsComparisonResponse {
 }
 
 export interface StatsComparisonParams {
-  period1: StatsPeriod;
-  period2: StatsPeriod;
-  year1?: number;
-  year2?: number;
+  period: StatsPeriod;  // Compares current period vs previous period
+  year?: number;        // For year-specific comparison
 }

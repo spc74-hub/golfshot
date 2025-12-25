@@ -794,10 +794,15 @@ async def get_my_stats_filtered(
     year: Optional[int] = Query(None, description="Specific year to filter by"),
     course_id: Optional[str] = Query(None, description="Filter by course ID"),
     course_length: Optional[Literal["9", "18", "all"]] = Query("all"),
+    previous: bool = Query(False, description="If true, get the previous period instead of current"),
 ):
     """
     Get statistics for the current user with period filters.
-    Calculates target strokes based on HI + Slope + CR for each round.
+    Uses ABSOLUTE calendar dates (not relative):
+    - 1m = current calendar month (or previous month if previous=True)
+    - 3m = current calendar quarter (or previous quarter if previous=True)
+    - 6m = current calendar semester (or previous semester if previous=True)
+    - 1y = current calendar year (or previous year if previous=True)
     """
     supabase = get_supabase_client()
 
@@ -807,22 +812,66 @@ async def get_my_stats_filtered(
         start_date = None
         period_label = "Todo el tiempo"
 
+        # Use end_date for all periods (defaults to today)
+        end_date = today
+
         if year:
-            start_date = date(year, 1, 1)
-            end_date = date(year, 12, 31)
-            period_label = f"Ano {year}"
+            # Specific year filter (previous shifts year back by 1)
+            target_year = year - 1 if previous else year
+            start_date = date(target_year, 1, 1)
+            end_date = date(target_year, 12, 31)
+            period_label = f"Ano {target_year}"
         elif period == "1m":
-            start_date = today - relativedelta(months=1)
-            period_label = "Ultimo mes"
+            # Current or previous calendar month
+            if previous:
+                # Previous month
+                prev_month = today.month - 1 if today.month > 1 else 12
+                prev_year = today.year if today.month > 1 else today.year - 1
+                start_date = date(prev_year, prev_month, 1)
+                # End of previous month
+                end_date = date(today.year, today.month, 1) - relativedelta(days=1)
+                period_label = "Mes anterior"
+            else:
+                start_date = date(today.year, today.month, 1)
+                period_label = "Este mes"
         elif period == "3m":
-            start_date = today - relativedelta(months=3)
-            period_label = "Ultimos 3 meses"
+            # Current or previous calendar quarter
+            current_quarter = (today.month - 1) // 3
+            if previous:
+                # Previous quarter
+                prev_quarter = current_quarter - 1 if current_quarter > 0 else 3
+                prev_year = today.year if current_quarter > 0 else today.year - 1
+                quarter_start_month = prev_quarter * 3 + 1
+                start_date = date(prev_year, quarter_start_month, 1)
+                end_date = date(prev_year, quarter_start_month + 2, 1) + relativedelta(months=1) - relativedelta(days=1)
+                period_label = "Trimestre anterior"
+            else:
+                quarter_start_month = current_quarter * 3 + 1
+                start_date = date(today.year, quarter_start_month, 1)
+                period_label = "Este trimestre"
         elif period == "6m":
-            start_date = today - relativedelta(months=6)
-            period_label = "Ultimos 6 meses"
+            # Current or previous calendar semester (Jan-Jun or Jul-Dec)
+            current_semester = 0 if today.month <= 6 else 1
+            if previous:
+                if current_semester == 0:
+                    # Previous semester was Jul-Dec of last year
+                    start_date = date(today.year - 1, 7, 1)
+                    end_date = date(today.year - 1, 12, 31)
+                else:
+                    # Previous semester was Jan-Jun of this year
+                    start_date = date(today.year, 1, 1)
+                    end_date = date(today.year, 6, 30)
+                period_label = "Semestre anterior"
+            else:
+                semester_start_month = 1 if today.month <= 6 else 7
+                start_date = date(today.year, semester_start_month, 1)
+                period_label = "Este semestre"
         elif period == "1y":
-            start_date = today - relativedelta(years=1)
-            period_label = "Ultimo ano"
+            # Current or previous calendar year
+            target_year = today.year - 1 if previous else today.year
+            start_date = date(target_year, 1, 1)
+            end_date = date(target_year, 12, 31)
+            period_label = f"Ano {target_year}" if previous else "Este ano"
 
         # Get user's handicap history
         hi_history_response = (
@@ -868,8 +917,7 @@ async def get_my_stats_filtered(
 
         if start_date:
             query = query.gte("round_date", start_date.isoformat())
-            if year:
-                query = query.lte("round_date", end_date.isoformat())
+            query = query.lte("round_date", end_date.isoformat())
 
         rounds_response = query.order("round_date", desc=True).execute()
         rounds = rounds_response.data or []
@@ -1269,34 +1317,40 @@ async def get_my_stats_filtered(
 @router.get("/me/stats/compare", response_model=StatsComparisonResponse)
 async def compare_stats(
     current_user: UserResponse = Depends(get_current_user),
-    period1: Literal["1m", "3m", "6m", "1y", "all"] = Query("3m", description="First period"),
-    period2: Literal["1m", "3m", "6m", "1y", "all"] = Query("1y", description="Second period to compare"),
-    year1: Optional[int] = Query(None, description="Specific year for period1"),
-    year2: Optional[int] = Query(None, description="Specific year for period2"),
+    period: Literal["1m", "3m", "6m", "1y", "all"] = Query("3m", description="Period to compare"),
+    year: Optional[int] = Query(None, description="Specific year for comparison"),
 ):
     """
-    Compare statistics between two time periods.
+    Compare statistics between current period and previous period.
+    Uses ABSOLUTE calendar dates:
+    - 1m: This month vs Previous month
+    - 3m: This quarter vs Previous quarter
+    - 6m: This semester vs Previous semester
+    - 1y: This year vs Previous year
     Returns stats for both periods and the difference between them.
     Negative differences in strokes/gap mean improvement (playing better).
     """
     from app.routers.users import get_my_stats_filtered
 
     try:
-        # Get stats for both periods
+        # Get stats for current period
         stats1 = await get_my_stats_filtered(
             current_user=current_user,
-            period=period1 if not year1 else "all",
-            year=year1,
+            period=period if not year else "all",
+            year=year,
             course_id=None,
             course_length="all",
+            previous=False,
         )
 
+        # Get stats for previous period
         stats2 = await get_my_stats_filtered(
             current_user=current_user,
-            period=period2 if not year2 else "all",
-            year=year2,
+            period=period if not year else "all",
+            year=year,
             course_id=None,
             course_length="all",
+            previous=True,
         )
 
         # Calculate differences

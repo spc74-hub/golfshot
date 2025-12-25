@@ -149,7 +149,6 @@ export function Stats() {
   const [globalPeriod, setGlobalPeriod] = useState<StatsPeriod | "year">("all");
   const [globalYear, setGlobalYear] = useState<number | undefined>(undefined);
   const [showComparison, setShowComparison] = useState(false);
-  const [comparePeriod, setComparePeriod] = useState<StatsPeriod>("1y");
 
   // Build filters object
   const filters: StatsFilters = useMemo(() => {
@@ -169,14 +168,14 @@ export function Stats() {
     hasFilters ? filters : undefined
   );
 
-  // Use comparison when enabled
+  // Use comparison when enabled - compares current period vs previous period
+  const comparisonPeriod = globalPeriod === "year" ? "1y" : (globalPeriod === "all" ? "3m" : globalPeriod);
   const { data: comparison } = useStatsComparison(
     {
-      period1: globalPeriod === "year" ? "all" : (globalPeriod === "all" ? "3m" : globalPeriod),
-      period2: comparePeriod,
-      year1: globalPeriod === "year" ? globalYear : undefined,
+      period: comparisonPeriod,
+      year: globalPeriod === "year" ? globalYear : undefined,
     },
-    showComparison
+    showComparison && hasFilters  // Only enable comparison when a filter is active
   );
 
   const stats = hasFilters ? filteredStats : baseStats;
@@ -462,29 +461,17 @@ export function Stats() {
                   checked={showComparison}
                   onChange={(e) => setShowComparison(e.target.checked)}
                   className="rounded border-gray-300"
+                  disabled={!hasFilters}
                 />
-                <Label htmlFor="showComparison" className="text-sm cursor-pointer">
-                  Comparar con:
+                <Label htmlFor="showComparison" className={`text-sm cursor-pointer ${!hasFilters ? "text-muted-foreground" : ""}`}>
+                  Comparar con periodo anterior
                 </Label>
               </div>
-              {showComparison && (
-                <Select
-                  value={comparePeriod}
-                  onValueChange={(val) => setComparePeriod(val as StatsPeriod)}
-                >
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="3m">3 meses</SelectItem>
-                    <SelectItem value="6m">6 meses</SelectItem>
-                    <SelectItem value="1y">1 ano</SelectItem>
-                    <SelectItem value="all">Todo</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-              {showComparison && comparison && (
+              {showComparison && hasFilters && comparison && (
                 <div className="flex gap-4 text-sm">
+                  <span className="text-muted-foreground">
+                    vs {comparison.period2.periodLabel}:
+                  </span>
                   {comparison.diffAvgStrokes18holes !== null && (
                     <span className={comparison.diffAvgStrokes18holes < 0 ? "text-green-600" : comparison.diffAvgStrokes18holes > 0 ? "text-red-500" : ""}>
                       {comparison.diffAvgStrokes18holes < 0 ? <ArrowDownRight className="inline h-4 w-4" /> : comparison.diffAvgStrokes18holes > 0 ? <ArrowUpRight className="inline h-4 w-4" /> : <Minus className="inline h-4 w-4" />}
@@ -752,58 +739,60 @@ export function Stats() {
         </CardContent>
       </Card>
 
-      {/* HVP by Period */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            HVP por Periodo
-          </CardTitle>
-          <CardDescription>
-            Handicap Virtual Promedio - Comparado con tu handicap oficial ({stats.userHandicapIndex?.toFixed(1) ?? "N/A"})
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {/* Total */}
-            <div className="text-center p-3 bg-muted/50 rounded-lg">
-              <div className="text-2xl font-bold">
-                {stats.hvpTotal !== null ? (
-                  <>{stats.hvpTotal.toFixed(1)} {formatHvpVsHandicap(stats.hvpTotal, stats.userHandicapIndex)}</>
-                ) : "N/A"}
+      {/* HVP by Period - Only show when no filter is active */}
+      {!hasFilters && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              HVP por Periodo
+            </CardTitle>
+            <CardDescription>
+              Handicap Virtual Promedio - Comparado con tu handicap oficial ({stats.userHandicapIndex?.toFixed(1) ?? "N/A"})
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Total */}
+              <div className="text-center p-3 bg-muted/50 rounded-lg">
+                <div className="text-2xl font-bold">
+                  {stats.hvpTotal !== null ? (
+                    <>{stats.hvpTotal.toFixed(1)} {formatHvpVsHandicap(stats.hvpTotal, stats.userHandicapIndex)}</>
+                  ) : "N/A"}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Total</p>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Total</p>
-            </div>
-            {/* Year */}
-            <div className="text-center p-3 bg-muted/50 rounded-lg">
-              <div className="text-2xl font-bold">
-                {stats.hvpYear !== null ? (
-                  <>{stats.hvpYear.toFixed(1)} {formatHvpVsHandicap(stats.hvpYear, stats.userHandicapIndex)}</>
-                ) : "N/A"}
+              {/* Year */}
+              <div className="text-center p-3 bg-muted/50 rounded-lg">
+                <div className="text-2xl font-bold">
+                  {stats.hvpYear !== null ? (
+                    <>{stats.hvpYear.toFixed(1)} {formatHvpVsHandicap(stats.hvpYear, stats.userHandicapIndex)}</>
+                  ) : "N/A"}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Este Ano</p>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Este Ano</p>
-            </div>
-            {/* Quarter */}
-            <div className="text-center p-3 bg-muted/50 rounded-lg">
-              <div className="text-2xl font-bold">
-                {stats.hvpQuarter !== null ? (
-                  <>{stats.hvpQuarter.toFixed(1)} {formatHvpVsHandicap(stats.hvpQuarter, stats.userHandicapIndex)}</>
-                ) : "N/A"}
+              {/* Quarter */}
+              <div className="text-center p-3 bg-muted/50 rounded-lg">
+                <div className="text-2xl font-bold">
+                  {stats.hvpQuarter !== null ? (
+                    <>{stats.hvpQuarter.toFixed(1)} {formatHvpVsHandicap(stats.hvpQuarter, stats.userHandicapIndex)}</>
+                  ) : "N/A"}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Trimestre</p>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Trimestre</p>
-            </div>
-            {/* Month */}
-            <div className="text-center p-3 bg-muted/50 rounded-lg">
-              <div className="text-2xl font-bold">
-                {stats.hvpMonth !== null ? (
-                  <>{stats.hvpMonth.toFixed(1)} {formatHvpVsHandicap(stats.hvpMonth, stats.userHandicapIndex)}</>
-                ) : "N/A"}
+              {/* Month */}
+              <div className="text-center p-3 bg-muted/50 rounded-lg">
+                <div className="text-2xl font-bold">
+                  {stats.hvpMonth !== null ? (
+                    <>{stats.hvpMonth.toFixed(1)} {formatHvpVsHandicap(stats.hvpMonth, stats.userHandicapIndex)}</>
+                  ) : "N/A"}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Este Mes</p>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Este Mes</p>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* HV Evolution Chart */}
       {chartData.length > 0 && (
