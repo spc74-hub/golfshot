@@ -13,6 +13,7 @@ import {
   formatMatchPlayScore,
   getMatchPlayHolesRemaining,
   calculatePlayingHandicap,
+  calculate75PercentDifferenceHDJ,
 } from "@/lib/calculations";
 import {
   Card,
@@ -270,16 +271,17 @@ export function RoundPlay() {
   };
 
   // Helper to recalculate HDJ if stored as 0 (legacy rounds)
+  // Always calculates at 100% - the stored playingHandicap should now always be 100%
   const recalculateHDJ = useCallback((player: Player): number => {
     if (!course || player.playingHandicap !== 0) return player.playingHandicap;
     // Find the tee slope for this player
     const tee = course.tees?.find((t: { name: string; slope: number }) => t.name === player.teeBox);
     if (!tee) return player.playingHandicap;
-    // Recalculate using the stored handicap index and tee slope
-    return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, round?.handicapPercentage || 100);
-  }, [course, round?.handicapPercentage]);
+    // Recalculate using the stored handicap index and tee slope at 100%
+    return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, 100);
+  }, [course]);
 
-  // Get the effective handicap for a player (when useHandicap is false, all use first player's handicap)
+  // Get the effective handicap for Stableford/Stats (always 100% HDJ)
   const getEffectiveHandicap = useCallback((player: Player): number => {
     if (!round) return player.playingHandicap;
     // When useHandicap is false, everyone uses the first player's handicap
@@ -291,6 +293,32 @@ export function RoundPlay() {
     }
     return recalculateHDJ(player);
   }, [round, recalculateHDJ]);
+
+  // Calculate 75% difference golpes de ventaja for match play
+  const golpesVentajaMap = useMemo(() => {
+    if (!round || round.handicapPercentage !== 75 || !round.useHandicap) {
+      return new Map<string, number>();
+    }
+    // Use recalculated HDJ for all players
+    const playersWithHDJ = round.players.map(p => ({
+      id: p.id,
+      playingHandicap: recalculateHDJ(p),
+    }));
+    return calculate75PercentDifferenceHDJ(playersWithHDJ);
+  }, [round, recalculateHDJ]);
+
+  // Get match play golpes de ventaja for a player (uses 75% difference when applicable)
+  const getMatchPlayHandicap = useCallback((player: Player): number => {
+    if (!round || !round.useHandicap) return 0;
+
+    // If 75% handicap mode, use the golpes de ventaja map
+    if (round.handicapPercentage === 75) {
+      return golpesVentajaMap.get(player.id) || 0;
+    }
+
+    // Otherwise use the full 100% HDJ
+    return recalculateHDJ(player);
+  }, [round, golpesVentajaMap, recalculateHDJ]);
 
   // Calculate total points for a player (only completed holes)
   const getTotalPoints = useCallback((player: Player): number => {
@@ -669,19 +697,19 @@ export function RoundPlay() {
 
       {/* Match Play Scoreboard */}
       {round.gameMode === "matchplay" && round.players.length === 2 && course && (() => {
-        // Use effective handicaps for Match Play scoring
-        const player1WithEffectiveHcp = {
+        // Use match play handicaps (75% difference when applicable) for Match Play scoring
+        const player1WithMatchPlayHcp = {
           ...round.players[0],
-          playingHandicap: getEffectiveHandicap(round.players[0]),
+          playingHandicap: getMatchPlayHandicap(round.players[0]),
         };
-        const player2WithEffectiveHcp = {
+        const player2WithMatchPlayHcp = {
           ...round.players[1],
-          playingHandicap: getEffectiveHandicap(round.players[1]),
+          playingHandicap: getMatchPlayHandicap(round.players[1]),
         };
         const is9Holes = round.courseLength !== "18";
         const matchScore = calculateMatchPlayScore(
-          player1WithEffectiveHcp,
-          player2WithEffectiveHcp,
+          player1WithMatchPlayHcp,
+          player2WithMatchPlayHcp,
           round.completedHoles || [],
           course.holesData,
           is9Holes
@@ -742,8 +770,11 @@ export function RoundPlay() {
       {/* Player Scores */}
       {round.players.map((player: Player) => {
         const effectiveHcp = getEffectiveHandicap(player);
+        const matchPlayHcp = getMatchPlayHandicap(player);
+        // For stroke indicator, use match play handicap when in 75% mode
+        const hcpForStrokes = round.handicapPercentage === 75 ? matchPlayHcp : effectiveHcp;
         const hasStrokeOnCurrentHole = currentHoleData
-          ? calculateStrokesReceived(effectiveHcp, currentHoleData.handicap) > 0
+          ? calculateStrokesReceived(hcpForStrokes, currentHoleData.handicap) > 0
           : false;
         const holesCompleted = (round.completedHoles || []).length;
         const expectedPoints = holesCompleted * 2;
@@ -760,7 +791,11 @@ export function RoundPlay() {
                   {hasStrokeOnCurrentHole && <span className="text-primary ml-1">*</span>}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  HDJ: {effectiveHcp}{!round.useHandicap && " (común)"}
+                  {round.handicapPercentage === 75 && round.useHandicap ? (
+                    <>HDJ: {effectiveHcp} · Ventaja: {matchPlayHcp}</>
+                  ) : (
+                    <>HDJ: {effectiveHcp}{!round.useHandicap && " (común)"}</>
+                  )}
                 </div>
               </div>
               <div className="text-right">

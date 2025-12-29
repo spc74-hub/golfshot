@@ -2,6 +2,8 @@ import type { Player, HoleData, StablefordResult } from "@/types";
 
 /**
  * Calculate playing handicap from handicap index and slope
+ * Always calculates at 100% - the percentage parameter is kept for backwards compatibility
+ * but should NOT be used for 75% calculations (use calculate75PercentDifferenceHDJ instead)
  */
 export function calculatePlayingHandicap(
   handicapIndex: number,
@@ -10,6 +12,37 @@ export function calculatePlayingHandicap(
 ): number {
   const playingHcp = (handicapIndex * slope) / 113;
   return Math.round((playingHcp * percentage) / 100);
+}
+
+/**
+ * Calculate the 75% difference handicap for match play
+ *
+ * In 75% handicap mode:
+ * - The player with the lowest HDJ is the "base" and plays at 0 golpes de ventaja
+ * - Other players receive 75% of their HDJ difference from the base
+ *
+ * @param players - Array of players with their full HDJ (100%)
+ * @returns Map of playerId/tempId to their match play golpes de ventaja
+ */
+export function calculate75PercentDifferenceHDJ(
+  players: { id?: string; tempId?: string; playingHandicap: number }[]
+): Map<string, number> {
+  const result = new Map<string, number>();
+
+  if (players.length === 0) return result;
+
+  // Find the minimum HDJ (the "base" player)
+  const minHDJ = Math.min(...players.map(p => p.playingHandicap));
+
+  // Calculate golpes de ventaja for each player
+  for (const player of players) {
+    const key = player.id || player.tempId || '';
+    const difference = player.playingHandicap - minHDJ;
+    const golpesVentaja = Math.round(difference * 0.75);
+    result.set(key, golpesVentaja);
+  }
+
+  return result;
 }
 
 /**

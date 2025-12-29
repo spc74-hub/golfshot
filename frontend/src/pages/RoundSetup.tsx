@@ -5,7 +5,7 @@ import { useCreateRound } from "@/hooks/useRounds";
 import { usePlayers, useCreatePlayer } from "@/hooks/usePlayers";
 import { useTemplates, useTemplate } from "@/hooks/useTemplates";
 import { useAuth } from "@/context/AuthContext";
-import { calculatePlayingHandicap } from "@/lib/calculations";
+import { calculatePlayingHandicap, calculate75PercentDifferenceHDJ } from "@/lib/calculations";
 import { coursesApi } from "@/lib/api";
 import {
   Card,
@@ -250,14 +250,21 @@ export function RoundSetup() {
     setTemplateApplied(true);
   };
 
-  // Calculate initial HDJ for a player (always calculate, even if useHandicap is false)
+  // Calculate initial HDJ for a player (always at 100%)
+  // The HDJ stored is always the real 100% value - 75% difference is calculated separately for display
   const calculateInitialHDJ = (handicapIndex: number, teeName: string): number => {
     if (!selectedCourse) return 0;
     const tee = selectedCourse.tees.find((t) => t.name === teeName);
     if (!tee) return 0;
-    // Always calculate the real HDJ - the useHandicap flag determines how it's used during play
-    return calculatePlayingHandicap(handicapIndex, tee.slope, handicapPercentage);
+    // Always calculate the real HDJ at 100%
+    return calculatePlayingHandicap(handicapIndex, tee.slope, 100);
   };
+
+  // Calculate the golpes de ventaja for 75% handicap mode
+  const golpesVentajaMap = useMemo(() => {
+    if (handicapPercentage !== 75 || !useHandicap) return new Map<string, number>();
+    return calculate75PercentDifferenceHDJ(players);
+  }, [players, handicapPercentage, useHandicap]);
 
   // Handle paste from clipboard
   useEffect(() => {
@@ -874,6 +881,11 @@ export function RoundSetup() {
                   75%
                 </Button>
               </div>
+              {handicapPercentage === 75 && (
+                <p className="text-xs text-muted-foreground">
+                  Match Play: 75% de la diferencia de HDJ. El jugador con menor HDJ juega a 0, los demas reciben golpes proporcionales.
+                </p>
+              )}
             </div>
           )}
 
@@ -1073,7 +1085,9 @@ export function RoundSetup() {
 
                     {useHandicap && (
                       <div className="space-y-1">
-                        <Label className="text-xs">HDJ (Handicap de Juego)</Label>
+                        <Label className="text-xs">
+                          HDJ {handicapPercentage === 75 ? "(100%)" : ""}
+                        </Label>
                         <Input
                           type="text"
                           inputMode="numeric"
@@ -1090,6 +1104,15 @@ export function RoundSetup() {
                           className="font-semibold"
                           placeholder="0"
                         />
+                      </div>
+                    )}
+
+                    {useHandicap && handicapPercentage === 75 && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">Golpes Ventaja</Label>
+                        <div className="h-10 flex items-center justify-center bg-muted rounded-md font-bold text-lg">
+                          {golpesVentajaMap.get(player.tempId) || 0}
+                        </div>
                       </div>
                     )}
 
