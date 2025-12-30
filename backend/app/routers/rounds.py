@@ -31,26 +31,40 @@ def calculate_virtual_handicap(
     use_handicap: bool = True,
     handicap_percentage: int = 100,
     tees: list | None = None,
+    owner_name: str | None = None,
 ) -> float | None:
     """
-    Calculate Virtual Handicap for the first player in the round.
+    Calculate Virtual Handicap for the round owner (logged-in user).
     HV = Handicap Index - (Stableford Points - 36) for 18 holes.
+    Always uses 100% HDJ for Stableford calculation (for accurate stats).
 
     Args:
         players: List of player data
         course_length: "18", "front9", or "back9"
         holes_data: List of hole data with par and handicap
         use_handicap: If False, all players use the first player's handicap ("común" mode)
-        handicap_percentage: Percentage of handicap to use (100 or 75)
+        handicap_percentage: Percentage of handicap to use (ignored, always uses 100%)
         tees: List of tees with slope data (for recalculating HDJ if stored as 0)
+        owner_name: The round owner's display name to find the correct player for HV
 
     Returns None if calculation cannot be performed.
     """
     if not players or not holes_data:
         return None
 
-    # Get first player (the main player whose stats we track)
-    user_player = players[0]
+    # Find the player matching the owner's name, or fall back to first player
+    user_player = None
+    if owner_name:
+        for p in players:
+            player_name = p.get("name", "").lower().strip()
+            owner_name_lower = owner_name.lower().strip()
+            if player_name == owner_name_lower or owner_name_lower in player_name or player_name in owner_name_lower:
+                user_player = p
+                break
+    # Fall back to first player if owner not found in players
+    if user_player is None:
+        user_player = players[0]
+
     scores = user_player.get("scores", {})
     od_handicap_index = user_player.get("od_handicap_index", 0)
     playing_handicap = user_player.get("playing_handicap", 0)
@@ -60,15 +74,17 @@ def calculate_virtual_handicap(
 
     # Handle legacy rounds where playing_handicap was stored as 0
     # Recalculate from od_handicap_index if we have tee data
+    # Always use 100% for HV calculation (accurate stats)
     if playing_handicap == 0 and od_handicap_index > 0 and tees:
         tee_box = user_player.get("tee_box", "")
         matching_tee = next((t for t in tees if t.get("name") == tee_box), None)
         if matching_tee:
             slope = matching_tee.get("slope", 113)
-            playing_handicap = calculate_playing_handicap(od_handicap_index, slope, handicap_percentage)
+            playing_handicap = calculate_playing_handicap(od_handicap_index, slope, 100)  # Always 100%
 
     # If use_handicap is False ("común" mode), we still use the first player's handicap
     # for Stableford calculation internally
+    # Always use 100% HDJ (stored value should already be 100%)
     effective_handicap = playing_handicap
 
     # Determine which holes to count based on course_length
@@ -275,11 +291,16 @@ async def create_round(
                     detail=f"Tee '{player.tee_box}' not found for course",
                 )
 
-            playing_handicap = calculate_playing_handicap(
-                player.od_handicap_index,
-                tee["slope"],
-                round_data.handicap_percentage if round_data.use_handicap else 0,
-            )
+            # Use the playing_handicap from frontend (already calculated at 100%)
+            # If not provided, calculate it at 100%
+            if player.playing_handicap is not None and player.playing_handicap > 0:
+                playing_handicap = player.playing_handicap
+            else:
+                playing_handicap = calculate_playing_handicap(
+                    player.od_handicap_index,
+                    tee["slope"],
+                    100,  # Always use 100% for HDJ storage
+                )
 
             players.append({
                 "id": str(uuid.uuid4()),
@@ -394,6 +415,17 @@ async def update_round(
                 if course_response.data and course_response.data.get("holes_data"):
                     holes_data = course_response.data["holes_data"]
                     tees = course_response.data.get("tees", [])
+
+                    # Get owner's display_name for HV calculation
+                    owner_display_name = None
+                    if is_owner:
+                        owner_display_name = current_user.display_name
+                    else:
+                        # Fetch owner's profile
+                        owner_profile = supabase.table("profiles").select("display_name").eq("id", user_id).single().execute()
+                        if owner_profile.data:
+                            owner_display_name = owner_profile.data.get("display_name")
+
                     virtual_handicap = calculate_virtual_handicap(
                         players_data,
                         course_length,
@@ -401,6 +433,7 @@ async def update_round(
                         use_handicap=use_handicap,
                         handicap_percentage=handicap_percentage,
                         tees=tees,
+                        owner_name=owner_display_name,
                     )
                     if virtual_handicap is not None:
                         update_data["virtual_handicap"] = virtual_handicap
@@ -746,6 +779,7 @@ async def save_imported_round(
             use_handicap=True,  # Imported rounds always use handicap
             handicap_percentage=100,
             tees=course_tees,
+            owner_name=player_name,  # Imported round always has owner as the only player
         )
 
         # Create the imported round
