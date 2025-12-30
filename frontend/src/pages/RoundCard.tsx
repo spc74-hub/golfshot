@@ -315,6 +315,17 @@ export function RoundCard() {
                 playingHandicap: getMatchPlayHandicap(round.players[1]),
               };
               const is9Holes = round.courseLength !== "18";
+
+              // Debug: Log match play calculation inputs
+              console.log("Match Play Debug:", {
+                player1Hcp: player1WithMatchPlayHcp.playingHandicap,
+                player2Hcp: player2WithMatchPlayHcp.playingHandicap,
+                completedHoles: round.completedHoles,
+                completedHolesLength: round.completedHoles?.length,
+                player1Scores: round.players[0].scores,
+                player2Scores: round.players[1].scores,
+              });
+
               const matchScore = calculateMatchPlayScore(
                 player1WithMatchPlayHcp,
                 player2WithMatchPlayHcp,
@@ -322,6 +333,8 @@ export function RoundCard() {
                 course.holesData,
                 is9Holes
               );
+
+              console.log("Match Play Result:", { matchScore });
               const holesRemaining = getMatchPlayHolesRemaining(
                 round.courseLength,
                 round.completedHoles || []
