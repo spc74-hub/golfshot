@@ -495,7 +495,7 @@ export function isMatchPlayDecided(
 
 /**
  * Format final Match Play result
- * e.g., "3&2", "2&1", "1 UP", "AS" (for tie)
+ * e.g., "4 UP", "3&2", "2&1", "1 UP", "AS" (for tie)
  */
 export function formatMatchPlayFinalResult(
   score: number,
@@ -508,12 +508,12 @@ export function formatMatchPlayFinalResult(
   if (adjustedScore === 0) return "AS"; // All Square (tie)
 
   if (holesRemaining === 0) {
-    // Finished on last hole
-    return adjustedScore > 0 ? "1 UP" : "1 DN";
+    // Finished on last hole - show the actual score difference
+    return adjustedScore > 0 ? `${absScore} UP` : `${absScore} DN`;
   }
 
   if (absScore > holesRemaining) {
-    // Won before finishing
+    // Won before finishing (e.g., "3&2" means 3 up with 2 holes to play)
     const margin = absScore;
     const holesLeft = holesRemaining;
     if (adjustedScore > 0) {
@@ -523,6 +523,6 @@ export function formatMatchPlayFinalResult(
     }
   }
 
-  // Match still in progress or just finished
+  // Match still in progress
   return adjustedScore > 0 ? `${absScore} UP` : `${absScore} DN`;
 }
