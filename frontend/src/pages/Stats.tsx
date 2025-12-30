@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useUserStats, useUserStatsFiltered, useStatsComparison } from "@/hooks/useStats";
 import { useRounds } from "@/hooks/useRounds";
+import { useAuth } from "@/context/AuthContext";
 import {
   useHandicapHistory,
   useCreateHandicapHistory,
@@ -139,6 +140,7 @@ const currentYear = new Date().getFullYear();
 const yearOptions = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3];
 
 export function Stats() {
+  const { user } = useAuth();
   const { data: rounds } = useRounds();
   const { data: handicapHistory, isLoading: hiLoading } = useHandicapHistory();
   const createHI = useCreateHandicapHistory();
@@ -315,8 +317,13 @@ export function Stats() {
       })
       .map((r) => {
         const date = parseISO(r.roundDate);
-        // Calculate total strokes from first player's scores
-        const scores = r.players[0]?.scores || {};
+        // Find the owner's player by matching display name, fall back to first player
+        const ownerName = user?.displayName?.toLowerCase().trim() || "";
+        const ownerPlayer = r.players.find((p) => {
+          const playerName = p.name.toLowerCase().trim();
+          return playerName === ownerName || ownerName.includes(playerName) || playerName.includes(ownerName);
+        }) || r.players[0];
+        const scores = ownerPlayer?.scores || {};
         const totalStrokes = Object.values(scores).reduce((sum, s) => sum + (s.strokes || 0), 0);
         return {
           date: r.roundDate,
@@ -330,7 +337,7 @@ export function Stats() {
       .sort((a, b) => a.date.localeCompare(b.date));
 
     return filteredRounds;
-  }, [rounds, timeRange, courseFilter, holesFilter]);
+  }, [rounds, timeRange, courseFilter, holesFilter, user]);
 
   // Calculate average HV from filtered chart data
   const avgHV = useMemo(() => {
