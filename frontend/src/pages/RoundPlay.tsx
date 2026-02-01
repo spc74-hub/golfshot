@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useRound, useUpdateRound, useFinishRound, useDeleteRound } from "@/hooks/useRounds";
 import { useCourse } from "@/hooks/useCourses";
@@ -66,6 +66,8 @@ export function RoundPlay() {
   const [currentHole, setCurrentHole] = useState(1);
   const [playerScores, setPlayerScores] = useState<Record<string, Score>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isHoleSaved, setIsHoleSaved] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Share dialog state
@@ -117,10 +119,13 @@ export function RoundPlay() {
     return course.holesData.find((h: HoleData) => h.number === currentHole) || null;
   }, [course, currentHole]);
 
-  // Initialize scores from round data
+  // Initialize scores from round data - only when currentHole changes
+  // Use a ref to track the last processed hole to prevent polling from overwriting changes
+  const lastProcessedHoleRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (round) {
-      setCurrentHole(round.currentHole);
+    if (round && currentHole !== lastProcessedHoleRef.current) {
+      lastProcessedHoleRef.current = currentHole;
       // Initialize player scores for current hole
       const scores: Record<string, Score> = {};
       round.players.forEach((player: Player) => {
@@ -131,8 +136,9 @@ export function RoundPlay() {
         }
       });
       setPlayerScores(scores);
+      setIsHoleSaved(true); // New hole is considered "saved" initially
     }
-  }, [round, currentHole, currentHoleData?.par]);
+  }, [currentHole, round, currentHoleData?.par]);
 
   // Update strokes for a player
   const updateStrokes = useCallback((playerId: string, strokes: number) => {
@@ -140,6 +146,8 @@ export function RoundPlay() {
       ...prev,
       [playerId]: { ...prev[playerId], strokes: Math.max(1, strokes) },
     }));
+    setIsHoleSaved(false); // Mark hole as unsaved when scores change
+    setSaveError(null); // Clear any previous errors
   }, []);
 
   // Update putts for a player
@@ -148,13 +156,16 @@ export function RoundPlay() {
       ...prev,
       [playerId]: { ...prev[playerId], putts: Math.max(0, putts) },
     }));
+    setIsHoleSaved(false); // Mark hole as unsaved when scores change
+    setSaveError(null); // Clear any previous errors
   }, []);
 
-  // Save current hole and go to next
-  const saveAndNext = async () => {
+  // Save current hole WITHOUT navigating
+  const saveCurrentHole = async () => {
     if (!round || !roundId) return;
 
     setIsSaving(true);
+    setSaveError(null);
     try {
       // Build updated players with new scores
       const updatedPlayers = round.players.map((player: Player) => ({
@@ -170,66 +181,90 @@ export function RoundPlay() {
         completedHoles.push(currentHole);
       }
 
-      const nextHoleIndex = holes.indexOf(currentHole) + 1;
-      const nextHole = nextHoleIndex < holes.length ? holes[nextHoleIndex] : currentHole;
-
       await updateRound.mutateAsync({
         id: roundId,
         data: {
-          currentHole: nextHole,
           completedHoles: completedHoles,
           players: updatedPlayers,
         },
       });
 
-      if (nextHoleIndex < holes.length) {
-        setCurrentHole(nextHole);
-      }
+      setIsHoleSaved(true);
     } catch (error) {
       console.error("Error saving scores:", error);
+      setSaveError("Error al guardar. Por favor, intenta de nuevo.");
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Save and go to previous hole
-  const saveAndPrev = async () => {
-    if (!round || !roundId) return;
+  // Navigate to next hole (only if saved)
+  const goToNextHole = async () => {
+    if (!round || !roundId || !isHoleSaved) return;
+
+    const nextHoleIndex = holes.indexOf(currentHole) + 1;
+    if (nextHoleIndex >= holes.length) return;
+
+    const nextHole = holes[nextHoleIndex];
 
     setIsSaving(true);
     try {
-      const updatedPlayers = round.players.map((player: Player) => ({
-        ...player,
-        scores: {
-          ...player.scores,
-          [currentHole]: playerScores[player.id],
+      await updateRound.mutateAsync({
+        id: roundId,
+        data: {
+          currentHole: nextHole,
         },
-      }));
+      });
 
-      const completedHoles = [...(round.completedHoles || [])];
-      if (!completedHoles.includes(currentHole)) {
-        completedHoles.push(currentHole);
-      }
+      setCurrentHole(nextHole);
+      setIsHoleSaved(true); // New hole is considered "saved" initially
+    } catch (error) {
+      console.error("Error navigating:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-      const prevHoleIndex = holes.indexOf(currentHole) - 1;
-      const prevHole = prevHoleIndex >= 0 ? holes[prevHoleIndex] : currentHole;
+  // Save current hole and go to next (legacy function, now calls both)
+  const saveAndNext = async () => {
+    await saveCurrentHole();
+    if (isHoleSaved) {
+      await goToNextHole();
+    }
+  };
 
+  // Navigate to previous hole (only if saved)
+  const goToPrevHole = async () => {
+    if (!round || !roundId || !isHoleSaved) return;
+
+    const prevHoleIndex = holes.indexOf(currentHole) - 1;
+    if (prevHoleIndex < 0) return;
+
+    const prevHole = holes[prevHoleIndex];
+
+    setIsSaving(true);
+    try {
       await updateRound.mutateAsync({
         id: roundId,
         data: {
           currentHole: prevHole,
-          completedHoles: completedHoles,
-          players: updatedPlayers,
         },
       });
 
-      if (prevHoleIndex >= 0) {
-        setCurrentHole(prevHole);
-      }
+      setCurrentHole(prevHole);
+      setIsHoleSaved(true); // Previous hole is considered "saved" initially
     } catch (error) {
-      console.error("Error saving scores:", error);
+      console.error("Error navigating:", error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Save and go to previous hole (legacy function, now calls both)
+  const saveAndPrev = async () => {
+    await saveCurrentHole();
+    if (isHoleSaved) {
+      await goToPrevHole();
     }
   };
 
@@ -428,35 +463,27 @@ export function RoundPlay() {
     return scoreColorMap.get(player.id) || "";
   }, [scoreColorMap]);
 
-  // Navigate to a specific hole (save current first)
+  // Navigate to a specific hole (save current first if needed, then navigate)
   const goToHole = async (targetHole: number) => {
     if (!round || !roundId || targetHole === currentHole) return;
 
+    // If current hole has unsaved changes, save first
+    if (!isHoleSaved) {
+      await saveCurrentHole();
+      if (saveError) return; // Don't navigate if save failed
+    }
+
     setIsSaving(true);
     try {
-      const updatedPlayers = round.players.map((player: Player) => ({
-        ...player,
-        scores: {
-          ...player.scores,
-          [currentHole]: playerScores[player.id],
-        },
-      }));
-
-      const completedHoles = [...(round.completedHoles || [])];
-      if (!completedHoles.includes(currentHole) && playerScores[round.players[0]?.id]?.strokes) {
-        completedHoles.push(currentHole);
-      }
-
       await updateRound.mutateAsync({
         id: roundId,
         data: {
           currentHole: targetHole,
-          completedHoles: completedHoles,
-          players: updatedPlayers,
         },
       });
 
       setCurrentHole(targetHole);
+      setIsHoleSaved(true); // Target hole starts as "saved"
     } catch (error) {
       console.error("Error navigating to hole:", error);
     } finally {
@@ -782,189 +809,224 @@ export function RoundPlay() {
         const pointsDiff = playerPoints - expectedPoints;
 
         return (
-        <Card key={player.id}>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className="font-semibold">
-                  {player.name}
-                  {hasStrokeOnCurrentHole && <span className="text-primary ml-1">*</span>}
+          <Card key={player.id}>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="font-semibold">
+                    {player.name}
+                    {hasStrokeOnCurrentHole && <span className="text-primary ml-1">*</span>}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {round.handicapPercentage === 75 && round.useHandicap ? (
+                      <>HDJ: {effectiveHcp} · Ventaja: {matchPlayHcp}</>
+                    ) : (
+                      <>HDJ: {effectiveHcp}{!round.useHandicap && " (común)"}</>
+                    )}
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {round.handicapPercentage === 75 && round.useHandicap ? (
-                    <>HDJ: {effectiveHcp} · Ventaja: {matchPlayHcp}</>
+                <div className="text-right">
+                  {round.gameMode === "matchplay" ? (
+                    <>
+                      <Badge variant="outline" className="text-lg">
+                        {playerPoints} pts{" "}
+                        <span className={`text-xs ${pointsDiff < 0 ? "text-red-500" : "text-green-600"}`}>
+                          ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
+                        </span>
+                      </Badge>
+                    </>
                   ) : (
-                    <>HDJ: {effectiveHcp}{!round.useHandicap && " (común)"}</>
+                    <>
+                      <Badge variant="outline" className="text-lg">
+                        {getTotalPoints(player)} pts{" "}
+                        <span className={`text-xs ${pointsDiff < 0 ? "text-red-500" : "text-green-600"}`}>
+                          ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
+                        </span>
+                      </Badge>
+                      {round.gameMode === "sindicato" && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Stableford: {playerPoints}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
-              <div className="text-right">
-                {round.gameMode === "matchplay" ? (
-                  <>
-                    <Badge variant="outline" className="text-lg">
-                      {playerPoints} pts{" "}
-                      <span className={`text-xs ${pointsDiff < 0 ? "text-red-500" : "text-green-600"}`}>
-                        ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
-                      </span>
-                    </Badge>
-                  </>
-                ) : (
-                  <>
-                    <Badge variant="outline" className="text-lg">
-                      {getTotalPoints(player)} pts{" "}
-                      <span className={`text-xs ${pointsDiff < 0 ? "text-red-500" : "text-green-600"}`}>
-                        ({pointsDiff >= 0 ? "+" : ""}{pointsDiff})
-                      </span>
-                    </Badge>
-                    {round.gameMode === "sindicato" && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        Stableford: {playerPoints}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              {/* Strokes */}
-              <div className="space-y-1">
-                <Label className="text-xs">Golpes{hasStrokeOnCurrentHole && " *"}</Label>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-10 w-10"
-                    onClick={() =>
-                      updateStrokes(player.id, (playerScores[player.id]?.strokes || 4) - 1)
-                    }
-                  >
-                    -
-                  </Button>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={playerScores[player.id]?.strokes || currentHoleData?.par || 4}
-                    onChange={(e) =>
-                      updateStrokes(player.id, parseInt(e.target.value) || 1)
-                    }
-                    className={`h-10 w-14 text-center text-lg font-bold ${getScoreColor(player)}`}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-10 w-10"
-                    onClick={() =>
-                      updateStrokes(player.id, (playerScores[player.id]?.strokes || 4) + 1)
-                    }
-                  >
-                    +
-                  </Button>
-                </div>
-              </div>
-
-              {/* Putts */}
-              <div className="space-y-1">
-                <Label className="text-xs">Putts</Label>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-10 w-10"
-                    onClick={() =>
-                      updatePutts(player.id, (playerScores[player.id]?.putts || 2) - 1)
-                    }
-                  >
-                    -
-                  </Button>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={playerScores[player.id]?.putts || DEFAULT_PUTTS}
-                    onChange={(e) =>
-                      updatePutts(player.id, parseInt(e.target.value) || 0)
-                    }
-                    className="h-10 w-14 text-center text-lg font-bold"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-10 w-10"
-                    onClick={() =>
-                      updatePutts(player.id, (playerScores[player.id]?.putts || 2) + 1)
-                    }
-                  >
-                    +
-                  </Button>
-                </div>
-              </div>
-
-              {/* Points - show for stableford and matchplay */}
-              {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
+              <div className="grid grid-cols-3 gap-3">
+                {/* Strokes */}
                 <div className="space-y-1">
-                  <Label className="text-xs">Puntos Hoyo</Label>
-                  <div className="h-10 flex items-center justify-center">
-                    <span className="text-2xl font-bold text-primary">
-                      {getHolePoints(player)}
-                    </span>
+                  <Label className="text-xs">Golpes{hasStrokeOnCurrentHole && " *"}</Label>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-10"
+                      onClick={() =>
+                        updateStrokes(player.id, (playerScores[player.id]?.strokes || 4) - 1)
+                      }
+                    >
+                      -
+                    </Button>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={playerScores[player.id]?.strokes || currentHoleData?.par || 4}
+                      onChange={(e) =>
+                        updateStrokes(player.id, parseInt(e.target.value) || 1)
+                      }
+                      className={`h-10 w-14 text-center text-lg font-bold ${getScoreColor(player)}`}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-10"
+                      onClick={() =>
+                        updateStrokes(player.id, (playerScores[player.id]?.strokes || 4) + 1)
+                      }
+                    >
+                      +
+                    </Button>
                   </div>
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+
+                {/* Putts */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Putts</Label>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-10"
+                      onClick={() =>
+                        updatePutts(player.id, (playerScores[player.id]?.putts || 2) - 1)
+                      }
+                    >
+                      -
+                    </Button>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={playerScores[player.id]?.putts || DEFAULT_PUTTS}
+                      onChange={(e) =>
+                        updatePutts(player.id, parseInt(e.target.value) || 0)
+                      }
+                      className="h-10 w-14 text-center text-lg font-bold"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-10"
+                      onClick={() =>
+                        updatePutts(player.id, (playerScores[player.id]?.putts || 2) + 1)
+                      }
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Points - show for stableford and matchplay */}
+                {(round.gameMode === "stableford" || round.gameMode === "matchplay") && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Puntos Hoyo</Label>
+                    <div className="h-10 flex items-center justify-center">
+                      <span className="text-2xl font-bold text-primary">
+                        {getHolePoints(player)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         );
       })}
 
       {/* Navigation */}
       <div className="fixed bottom-16 md:bottom-0 left-0 right-0 bg-background border-t p-4 z-40">
-        <div className="max-w-lg mx-auto flex gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            disabled={isFirstHole || isSaving}
-            onClick={saveAndPrev}
-          >
-            ← Anterior
-          </Button>
+        <div className="max-w-lg mx-auto space-y-3">
+          {/* Save status and error */}
+          <div className="flex items-center justify-center gap-2 min-h-[24px]">
+            {isSaving && (
+              <span className="text-sm text-muted-foreground">Guardando...</span>
+            )}
+            {!isSaving && isHoleSaved && !saveError && (
+              <span className="text-sm text-green-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Hoyo guardado
+              </span>
+            )}
+            {saveError && (
+              <span className="text-sm text-destructive">{saveError}</span>
+            )}
+            {!isSaving && !isHoleSaved && !saveError && (
+              <span className="text-sm text-amber-600">Cambios sin guardar</span>
+            )}
+          </div>
 
-          {isLastHole ? (
+          {/* Buttons */}
+          <div className="flex gap-2">
             <Button
+              variant="outline"
               className="flex-1"
-              disabled={isSaving}
-              onClick={handleFinish}
+              disabled={isFirstHole || isSaving || !isHoleSaved}
+              onClick={goToPrevHole}
             >
-              {isSaving ? "Guardando..." : "Finalizar"}
+              ← Anterior
             </Button>
-          ) : (
-            <Button
-              className="flex-1"
-              disabled={isSaving}
-              onClick={saveAndNext}
-            >
-              {isSaving ? "Guardando..." : "Siguiente →"}
-            </Button>
-          )}
-        </div>
 
-        {/* Hole indicators */}
-        <div className="flex justify-center gap-1 mt-2">
-          {holes.map((hole) => (
-            <button
-              key={hole}
-              onClick={() => goToHole(hole)}
-              disabled={isSaving}
-              className={`w-6 h-6 text-xs rounded-full transition-colors ${
-                hole === currentHole
+            {/* Save button - only show if not saved */}
+            {!isHoleSaved && (
+              <Button
+                variant="default"
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                disabled={isSaving}
+                onClick={saveCurrentHole}
+              >
+                {isSaving ? "Guardando..." : "💾 Guardar Hoyo"}
+              </Button>
+            )}
+
+            {isLastHole ? (
+              <Button
+                className="flex-1"
+                disabled={isSaving || !isHoleSaved}
+                onClick={handleFinish}
+              >
+                {isSaving ? "Guardando..." : "Finalizar"}
+              </Button>
+            ) : (
+              <Button
+                className="flex-1"
+                disabled={isSaving || !isHoleSaved}
+                onClick={goToNextHole}
+              >
+                {isSaving ? "Guardando..." : "Siguiente →"}
+              </Button>
+            )}
+          </div>
+
+          {/* Hole indicators */}
+          <div className="flex justify-center gap-1 mt-2">
+            {holes.map((hole) => (
+              <button
+                key={hole}
+                onClick={() => goToHole(hole)}
+                disabled={isSaving}
+                className={`w-6 h-6 text-xs rounded-full transition-colors ${hole === currentHole
                   ? "bg-primary text-primary-foreground"
                   : round.completedHoles?.includes(hole)
-                  ? "bg-green-500 text-white"
-                  : "bg-muted hover:bg-muted/80"
-              } ${isSaving ? "opacity-50" : ""}`}
-            >
-              {hole}
-            </button>
-          ))}
+                    ? "bg-green-500 text-white"
+                    : "bg-muted hover:bg-muted/80"
+                  } ${isSaving ? "opacity-50" : ""}`}
+              >
+                {hole}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
