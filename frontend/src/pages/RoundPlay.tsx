@@ -225,14 +225,6 @@ export function RoundPlay() {
     }
   };
 
-  // Save current hole and go to next (legacy function, now calls both)
-  const saveAndNext = async () => {
-    await saveCurrentHole();
-    if (isHoleSaved) {
-      await goToNextHole();
-    }
-  };
-
   // Navigate to previous hole (only if saved)
   const goToPrevHole = async () => {
     if (!round || !roundId || !isHoleSaved) return;
@@ -257,14 +249,6 @@ export function RoundPlay() {
       console.error("Error navigating:", error);
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  // Save and go to previous hole (legacy function, now calls both)
-  const saveAndPrev = async () => {
-    await saveCurrentHole();
-    if (isHoleSaved) {
-      await goToPrevHole();
     }
   };
 
