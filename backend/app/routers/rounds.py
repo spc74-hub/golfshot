@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
+from sqlalchemy.dialects.postgresql import JSONB
 from app.models.schemas import RoundCreate, RoundUpdate, RoundResponse, UserResponse, JoinRoundRequest, JoinRoundResponse
 from app.models.db_models import Round as RoundModel, Course as CourseModel, Profile
 from app.database import get_db
@@ -188,7 +189,7 @@ async def list_rounds(
         # We need to check JSON array contains the user ID
         result2 = await db.execute(
             select(RoundModel)
-            .where(RoundModel.collaborators.op("@>")(f'["{current_user.id}"]'))
+            .where(RoundModel.collaborators.op("@>")(func.cast(f'["{current_user.id}"]', JSONB)))
             .order_by(RoundModel.round_date.desc())
         )
         shared_rounds = result2.scalars().all()
