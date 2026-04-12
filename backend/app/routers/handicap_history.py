@@ -1,125 +1,107 @@
 from fastapi import APIRouter, HTTPException, status, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.models.schemas import (
-    HandicapHistoryCreate,
-    HandicapHistoryUpdate,
-    HandicapHistoryResponse,
-    UserResponse,
+    HandicapHistoryCreate, HandicapHistoryUpdate, HandicapHistoryResponse, UserResponse,
 )
-from app.services.supabase import get_supabase_client
+from app.models.db_models import HandicapHistory as HandicapHistoryModel
+from app.database import get_db
 from app.dependencies import get_current_user
 from typing import Optional
 
 router = APIRouter(prefix="/handicap-history", tags=["handicap-history"])
 
 
-@router.get("/", response_model=list[HandicapHistoryResponse])
-async def list_handicap_history(current_user: UserResponse = Depends(get_current_user)):
-    """List all handicap history entries for the current user, ordered by date desc."""
-    supabase = get_supabase_client()
+def model_to_dict(h: HandicapHistoryModel) -> dict:
+    return {
+        "id": h.id,
+        "user_id": h.user_id,
+        "handicap_index": h.handicap_index,
+        "effective_date": h.effective_date,
+        "notes": h.notes,
+        "created_at": h.created_at.isoformat() if h.created_at else None,
+    }
 
+
+@router.get("/", response_model=list[HandicapHistoryResponse])
+async def list_handicap_history(
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all handicap history entries for the current user, ordered by date desc."""
     try:
-        response = (
-            supabase.table("handicap_history")
-            .select("*")
-            .eq("user_id", current_user.id)
-            .order("effective_date", desc=True)
-            .execute()
+        result = await db.execute(
+            select(HandicapHistoryModel)
+            .where(HandicapHistoryModel.user_id == current_user.id)
+            .order_by(HandicapHistoryModel.effective_date.desc())
         )
-        return response.data or []
+        entries = result.scalars().all()
+        return [model_to_dict(h) for h in entries]
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.get("/current", response_model=Optional[HandicapHistoryResponse])
-async def get_current_handicap(current_user: UserResponse = Depends(get_current_user)):
+async def get_current_handicap(
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get the most recent (current) handicap index for the user."""
-    supabase = get_supabase_client()
-
-    try:
-        response = (
-            supabase.table("handicap_history")
-            .select("*")
-            .eq("user_id", current_user.id)
-            .order("effective_date", desc=True)
-            .limit(1)
-            .execute()
-        )
-
-        if response.data and len(response.data) > 0:
-            return response.data[0]
-        return None
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    result = await db.execute(
+        select(HandicapHistoryModel)
+        .where(HandicapHistoryModel.user_id == current_user.id)
+        .order_by(HandicapHistoryModel.effective_date.desc())
+        .limit(1)
+    )
+    entry = result.scalar_one_or_none()
+    if entry:
+        return model_to_dict(entry)
+    return None
 
 
 @router.get("/at-date/{date}", response_model=Optional[HandicapHistoryResponse])
 async def get_handicap_at_date(
     date: str,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get the handicap index that was effective on a specific date."""
-    supabase = get_supabase_client()
-
-    try:
-        # Get the most recent handicap entry that was effective on or before the given date
-        response = (
-            supabase.table("handicap_history")
-            .select("*")
-            .eq("user_id", current_user.id)
-            .lte("effective_date", date)
-            .order("effective_date", desc=True)
-            .limit(1)
-            .execute()
+    result = await db.execute(
+        select(HandicapHistoryModel)
+        .where(
+            HandicapHistoryModel.user_id == current_user.id,
+            HandicapHistoryModel.effective_date <= date,
         )
-
-        if response.data and len(response.data) > 0:
-            return response.data[0]
-        return None
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+        .order_by(HandicapHistoryModel.effective_date.desc())
+        .limit(1)
+    )
+    entry = result.scalar_one_or_none()
+    if entry:
+        return model_to_dict(entry)
+    return None
 
 
 @router.post("/", response_model=HandicapHistoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_handicap_entry(
     entry: HandicapHistoryCreate,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new handicap history entry."""
-    supabase = get_supabase_client()
-
     try:
-        entry_data = {
-            "user_id": current_user.id,
-            "handicap_index": entry.handicap_index,
-            "effective_date": entry.effective_date,
-            "notes": entry.notes,
-        }
-
-        response = supabase.table("handicap_history").insert(entry_data).execute()
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to create handicap entry",
-            )
-
-        return response.data[0]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+        db_entry = HandicapHistoryModel(
+            user_id=current_user.id,
+            handicap_index=entry.handicap_index,
+            effective_date=entry.effective_date,
+            notes=entry.notes,
         )
+        db.add(db_entry)
+        await db.commit()
+        await db.refresh(db_entry)
+        return model_to_dict(db_entry)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.put("/{entry_id}", response_model=HandicapHistoryResponse)
@@ -127,101 +109,46 @@ async def update_handicap_entry(
     entry_id: str,
     entry: HandicapHistoryUpdate,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update a handicap history entry."""
-    supabase = get_supabase_client()
+    result = await db.execute(
+        select(HandicapHistoryModel).where(HandicapHistoryModel.id == entry_id)
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Handicap entry not found")
+    if existing.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    try:
-        # Check ownership
-        existing = (
-            supabase.table("handicap_history")
-            .select("user_id")
-            .eq("id", entry_id)
-            .single()
-            .execute()
-        )
+    update_data = {k: v for k, v in entry.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
-        if not existing.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Handicap entry not found",
-            )
+    for key, value in update_data.items():
+        setattr(existing, key, value)
 
-        if existing.data["user_id"] != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
-
-        # Prepare update data (only include non-None values)
-        update_data = {k: v for k, v in entry.model_dump().items() if v is not None}
-
-        if not update_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No fields to update",
-            )
-
-        response = (
-            supabase.table("handicap_history")
-            .update(update_data)
-            .eq("id", entry_id)
-            .execute()
-        )
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Handicap entry not found",
-            )
-
-        return response.data[0]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    await db.commit()
+    await db.refresh(existing)
+    return model_to_dict(existing)
 
 
 @router.delete("/{entry_id}")
 async def delete_handicap_entry(
     entry_id: str,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Delete a handicap history entry."""
-    supabase = get_supabase_client()
+    result = await db.execute(
+        select(HandicapHistoryModel).where(HandicapHistoryModel.id == entry_id)
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Handicap entry not found")
+    if existing.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    try:
-        # Check ownership
-        existing = (
-            supabase.table("handicap_history")
-            .select("user_id")
-            .eq("id", entry_id)
-            .single()
-            .execute()
-        )
-
-        if not existing.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Handicap entry not found",
-            )
-
-        if existing.data["user_id"] != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
-
-        supabase.table("handicap_history").delete().eq("id", entry_id).execute()
-
-        return {"message": "Handicap entry deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    await db.delete(existing)
+    await db.commit()
+    return {"message": "Handicap entry deleted successfully"}

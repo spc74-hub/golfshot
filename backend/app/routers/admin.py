@@ -1,37 +1,41 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from datetime import datetime, timedelta
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from datetime import datetime, date
 from app.models.schemas import AdminStats, UserResponse
-from app.services.supabase import get_supabase_admin_client
+from app.models.db_models import Profile, Round as RoundModel, Course as CourseModel
+from app.database import get_db
 from app.dependencies import get_admin_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/stats", response_model=AdminStats)
-async def get_admin_stats(admin_user: UserResponse = Depends(get_admin_user)):
+async def get_admin_stats(
+    admin_user: UserResponse = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get admin statistics (admin only)."""
-    supabase = get_supabase_admin_client()
-
     try:
         # Get total users
-        users_response = supabase.auth.admin.list_users()
-        total_users = len(users_response) if isinstance(users_response, list) else 0
+        result = await db.execute(select(func.count(Profile.id)))
+        total_users = result.scalar() or 0
 
         # Get total rounds
-        rounds_response = supabase.table("rounds").select("id, created_at").execute()
-        rounds = rounds_response.data or []
-        total_rounds = len(rounds)
+        result = await db.execute(select(func.count(RoundModel.id)))
+        total_rounds = result.scalar() or 0
 
         # Get rounds this month
-        first_of_month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        rounds_this_month = sum(
-            1 for r in rounds
-            if datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")) >= first_of_month
+        today = date.today()
+        month_start = date(today.year, today.month, 1).isoformat()
+        result = await db.execute(
+            select(func.count(RoundModel.id)).where(RoundModel.round_date >= month_start)
         )
+        rounds_this_month = result.scalar() or 0
 
         # Get total courses
-        courses_response = supabase.table("courses").select("id").execute()
-        total_courses = len(courses_response.data) if courses_response.data else 0
+        result = await db.execute(select(func.count(CourseModel.id)))
+        total_courses = result.scalar() or 0
 
         return AdminStats(
             total_users=total_users,
@@ -40,7 +44,4 @@ async def get_admin_stats(admin_user: UserResponse = Depends(get_admin_user)):
             total_courses=total_courses,
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

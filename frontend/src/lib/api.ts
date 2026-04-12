@@ -29,21 +29,9 @@ import type {
 } from "@/types";
 
 // Get API URL from environment or use default
-// In production, if VITE_API_URL is not set, derive it from the current origin
 function getApiUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl) {
-    // Force HTTPS in production if the page is served over HTTPS
-    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && envUrl.startsWith('http://')) {
-      return envUrl.replace('http://', 'https://');
-    }
-    return envUrl;
-  }
-  // In production (HTTPS), default to the backend subdomain
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
-    // Assuming backend is at golfshot.up.railway.app when frontend is at golfshotf.up.railway.app
-    return 'https://golfshot.up.railway.app';
-  }
+  if (envUrl) return envUrl;
   return "http://localhost:8000";
 }
 

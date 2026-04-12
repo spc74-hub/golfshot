@@ -1,53 +1,59 @@
 from fastapi import APIRouter, HTTPException, status, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.models.schemas import LoginRequest, RegisterRequest, UserResponse
-from app.services.supabase import get_supabase_client
+from app.models.db_models import Profile
+from app.database import get_db
+from app.auth import verify_password, get_password_hash, create_access_token
 from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register")
-async def register(request: RegisterRequest):
+async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """Register a new user."""
-    supabase = get_supabase_client()
-
     try:
-        # Create user in Supabase Auth
-        auth_response = supabase.auth.sign_up({
-            "email": request.email,
-            "password": request.password,
-        })
-
-        if not auth_response.user:
+        # Check if email already exists
+        result = await db.execute(select(Profile).where(Profile.email == request.email))
+        existing = result.scalar_one_or_none()
+        if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to create user",
+                detail="Email already registered",
             )
 
-        user = auth_response.user
+        # Create user
+        profile = Profile(
+            email=request.email,
+            hashed_password=get_password_hash(request.password),
+            display_name=request.display_name,
+            role="user",
+            status="active",
+            permissions=[],
+        )
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
 
-        # Create profile
-        supabase.table("profiles").insert({
-            "id": user.id,
-            "display_name": request.display_name,
-            "role": "user",
-            "status": "active",
-        }).execute()
+        # Create access token
+        access_token = create_access_token(data={"sub": profile.id})
 
         return {
             "message": "User registered successfully",
             "user": {
-                "id": user.id,
-                "email": user.email,
+                "id": profile.id,
+                "email": profile.email,
             },
             "session": {
-                "access_token": auth_response.session.access_token if auth_response.session else None,
-                "refresh_token": auth_response.session.refresh_token if auth_response.session else None,
+                "access_token": access_token,
+                "refresh_token": None,
             },
         }
     except HTTPException:
         raise
     except Exception as e:
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
@@ -55,46 +61,36 @@ async def register(request: RegisterRequest):
 
 
 @router.post("/login")
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Login user."""
-    supabase = get_supabase_client()
-
     try:
-        auth_response = supabase.auth.sign_in_with_password({
-            "email": request.email,
-            "password": request.password,
-        })
+        result = await db.execute(select(Profile).where(Profile.email == request.email))
+        profile = result.scalar_one_or_none()
 
-        if not auth_response.user or not auth_response.session:
+        if not profile or not verify_password(request.password, profile.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
             )
 
-        user = auth_response.user
-        session = auth_response.session
-
-        # Get profile
-        profile_response = supabase.table("profiles").select("*").eq("id", user.id).single().execute()
-        profile = profile_response.data if profile_response.data else {}
-
-        # Check if user is disabled
-        if profile.get("status") == "disabled":
+        if profile.status == "disabled" or profile.status == "blocked":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is disabled",
             )
 
+        access_token = create_access_token(data={"sub": profile.id})
+
         return {
-            "access_token": session.access_token,
-            "refresh_token": session.refresh_token,
+            "access_token": access_token,
+            "refresh_token": None,
             "token_type": "bearer",
             "user": {
-                "id": user.id,
-                "email": user.email,
-                "display_name": profile.get("display_name"),
-                "role": profile.get("role", "user"),
-                "status": profile.get("status", "active"),
+                "id": profile.id,
+                "email": profile.email,
+                "display_name": profile.display_name,
+                "role": profile.role or "user",
+                "status": profile.status or "active",
             },
         }
     except HTTPException:
@@ -108,17 +104,8 @@ async def login(request: LoginRequest):
 
 @router.post("/logout")
 async def logout(current_user: UserResponse = Depends(get_current_user)):
-    """Logout user."""
-    supabase = get_supabase_client()
-
-    try:
-        supabase.auth.sign_out()
-        return {"message": "Logged out successfully"}
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    """Logout user (client-side token removal)."""
+    return {"message": "Logged out successfully"}
 
 
 @router.get("/me", response_model=UserResponse)

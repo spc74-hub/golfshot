@@ -1,9 +1,13 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from app.models.schemas import CourseCreate, CourseUpdate, CourseResponse, UserResponse
-from app.services.supabase import get_supabase_client
+from app.models.db_models import Course as CourseModel, Round as RoundModel
+from app.database import get_db
 from app.dependencies import get_current_user, get_admin_user
 from app.services.scorecard_ocr import extract_scorecard_data
 from app.config import get_settings
+from datetime import datetime
 import base64
 
 router = APIRouter(prefix="/courses", tags=["courses"])
@@ -134,73 +138,71 @@ INITIAL_COURSES = [
 ]
 
 
-@router.get("/", response_model=list[CourseResponse])
-async def list_courses(current_user: UserResponse = Depends(get_current_user)):
-    """List all courses."""
-    supabase = get_supabase_client()
+def model_to_dict(course: CourseModel) -> dict:
+    return {
+        "id": course.id,
+        "name": course.name,
+        "holes": course.holes,
+        "par": course.par,
+        "tees": course.tees,
+        "holes_data": course.holes_data,
+        "is_favorite": course.is_favorite or False,
+        "created_at": course.created_at.isoformat() if course.created_at else None,
+        "updated_at": course.updated_at.isoformat() if course.updated_at else None,
+    }
 
+
+@router.get("/", response_model=list[CourseResponse])
+async def list_courses(
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all courses."""
     try:
-        response = supabase.table("courses").select("*").order("name").execute()
-        return response.data or []
+        result = await db.execute(select(CourseModel).order_by(CourseModel.name))
+        courses = result.scalars().all()
+        return [model_to_dict(c) for c in courses]
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.get("/{course_id}", response_model=CourseResponse)
 async def get_course(
     course_id: str,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get course by ID."""
-    supabase = get_supabase_client()
-
-    try:
-        response = supabase.table("courses").select("*").eq("id", course_id).single().execute()
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Course not found",
-            )
-
-        return response.data
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    result = await db.execute(select(CourseModel).where(CourseModel.id == course_id))
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    return model_to_dict(course)
 
 
 @router.post("/", response_model=CourseResponse, status_code=status.HTTP_201_CREATED)
 async def create_course(
     course: CourseCreate,
     admin_user: UserResponse = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new course (admin only)."""
-    supabase = get_supabase_client()
-
     try:
-        response = supabase.table("courses").insert(course.model_dump()).execute()
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to create course",
-            )
-
-        return response.data[0]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+        db_course = CourseModel(
+            name=course.name,
+            holes=course.holes,
+            par=course.par,
+            tees=[t.model_dump() for t in course.tees],
+            holes_data=[h.model_dump() for h in course.holes_data],
+            is_favorite=course.is_favorite,
         )
+        db.add(db_course)
+        await db.commit()
+        await db.refresh(db_course)
+        return model_to_dict(db_course)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.put("/{course_id}", response_model=CourseResponse)
@@ -208,139 +210,115 @@ async def update_course(
     course_id: str,
     course: CourseUpdate,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update a course."""
-    supabase = get_supabase_client()
+    result = await db.execute(select(CourseModel).where(CourseModel.id == course_id))
+    db_course = result.scalar_one_or_none()
+    if not db_course:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
 
-    try:
-        update_data = {k: v for k, v in course.model_dump().items() if v is not None}
+    update_data = {k: v for k, v in course.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
-        if not update_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No fields to update",
-            )
+    for key, value in update_data.items():
+        if key == "tees":
+            value = [t.model_dump() if hasattr(t, 'model_dump') else t for t in value]
+        elif key == "holes_data":
+            value = [h.model_dump() if hasattr(h, 'model_dump') else h for h in value]
+        setattr(db_course, key, value)
 
-        response = supabase.table("courses").update(update_data).eq("id", course_id).execute()
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Course not found",
-            )
-
-        return response.data[0]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    db_course.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(db_course)
+    return model_to_dict(db_course)
 
 
 @router.get("/{course_id}/rounds-count")
 async def get_course_rounds_count(
     course_id: str,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get the count of rounds associated with a course."""
-    supabase = get_supabase_client()
-
-    try:
-        response = supabase.table("rounds").select("id", count="exact").eq("course_id", course_id).execute()
-        return {"count": response.count or 0}
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    result = await db.execute(
+        select(func.count(RoundModel.id)).where(RoundModel.course_id == course_id)
+    )
+    count = result.scalar() or 0
+    return {"count": count}
 
 
 @router.get("/{course_id}/rounds")
 async def get_course_rounds(
     course_id: str,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get all rounds associated with a course."""
-    supabase = get_supabase_client()
-
-    try:
-        response = (
-            supabase.table("rounds")
-            .select("id, round_date, players, is_finished, course_length, game_mode")
-            .eq("course_id", course_id)
-            .eq("user_id", current_user.id)
-            .order("round_date", desc=True)
-            .execute()
-        )
-        return response.data or []
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    result = await db.execute(
+        select(RoundModel)
+        .where(RoundModel.course_id == course_id, RoundModel.user_id == current_user.id)
+        .order_by(RoundModel.round_date.desc())
+    )
+    rounds = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "round_date": r.round_date,
+            "players": r.players,
+            "is_finished": r.is_finished,
+            "course_length": r.course_length,
+            "game_mode": r.game_mode,
+        }
+        for r in rounds
+    ]
 
 
 @router.delete("/{course_id}")
 async def delete_course(
     course_id: str,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Delete a course."""
-    supabase = get_supabase_client()
+    result = await db.execute(select(CourseModel).where(CourseModel.id == course_id))
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
 
-    try:
-        response = supabase.table("courses").delete().eq("id", course_id).execute()
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Course not found",
-            )
-
-        return {"message": "Course deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    await db.delete(course)
+    await db.commit()
+    return {"message": "Course deleted successfully"}
 
 
 @router.post("/migrate")
-async def migrate_courses(admin_user: UserResponse = Depends(get_admin_user)):
+async def migrate_courses(
+    admin_user: UserResponse = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Migrate initial courses data (admin only)."""
-    supabase = get_supabase_client()
-
     try:
-        # Check if courses already exist
-        existing = supabase.table("courses").select("name").execute()
-        existing_names = {c["name"] for c in existing.data} if existing.data else set()
+        result = await db.execute(select(CourseModel.name))
+        existing_names = {row[0] for row in result.all()}
 
         migrated = []
         skipped = []
 
-        for course in INITIAL_COURSES:
-            if course["name"] in existing_names:
-                skipped.append(course["name"])
+        for course_data in INITIAL_COURSES:
+            if course_data["name"] in existing_names:
+                skipped.append(course_data["name"])
                 continue
 
-            response = supabase.table("courses").insert(course).execute()
-            if response.data:
-                migrated.append(course["name"])
+            db_course = CourseModel(**course_data)
+            db.add(db_course)
+            migrated.append(course_data["name"])
 
-        return {
-            "message": "Migration completed",
-            "migrated": migrated,
-            "skipped": skipped,
-        }
+        await db.commit()
+        return {"message": "Migration completed", "migrated": migrated, "skipped": skipped}
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 # ============================================
@@ -352,10 +330,7 @@ async def extract_course_from_image(
     file: UploadFile = File(..., description="Scorecard image (JPEG, PNG)"),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    """
-    Extract golf course data from a scorecard image using AI vision.
-    Returns the extracted data for review before saving.
-    """
+    """Extract golf course data from a scorecard image using AI vision."""
     settings = get_settings()
 
     if not settings.anthropic_api_key:
@@ -364,7 +339,6 @@ async def extract_course_from_image(
             detail="AI service not configured. Please add ANTHROPIC_API_KEY to .env",
         )
 
-    # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
     if file.content_type not in allowed_types:
         raise HTTPException(
@@ -372,7 +346,6 @@ async def extract_course_from_image(
             detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}",
         )
 
-    # Check file size (max 10MB)
     contents = await file.read()
     if len(contents) > 10 * 1024 * 1024:
         raise HTTPException(
@@ -381,23 +354,15 @@ async def extract_course_from_image(
         )
 
     try:
-        # Convert to base64
         image_base64 = base64.standard_b64encode(contents).decode("utf-8")
-
-        # Extract data using Claude Vision
         extracted_data = await extract_scorecard_data(image_base64, file.content_type)
-
         return {
             "success": True,
             "message": "Data extracted successfully. Review and confirm to save.",
             "course_data": extracted_data,
         }
-
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -409,38 +374,32 @@ async def extract_course_from_image(
 async def save_extracted_course(
     course_data: CourseCreate,
     current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Save an extracted course to the database.
-    Called after reviewing the extracted data from /from-image/extract.
-    """
-    supabase = get_supabase_client()
-
+    """Save an extracted course to the database."""
     try:
-        # Check if course already exists by name
-        existing = supabase.table("courses").select("*").eq("name", course_data.name).execute()
-
-        if existing.data and len(existing.data) > 0:
+        result = await db.execute(select(CourseModel).where(CourseModel.name == course_data.name))
+        existing = result.scalar_one_or_none()
+        if existing:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"A course named '{course_data.name}' already exists",
             )
 
-        # Insert new course
-        response = supabase.table("courses").insert(course_data.model_dump()).execute()
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to save course",
-            )
-
-        return response.data[0]
-
+        db_course = CourseModel(
+            name=course_data.name,
+            holes=course_data.holes,
+            par=course_data.par,
+            tees=[t.model_dump() for t in course_data.tees],
+            holes_data=[h.model_dump() for h in course_data.holes_data],
+            is_favorite=course_data.is_favorite,
+        )
+        db.add(db_course)
+        await db.commit()
+        await db.refresh(db_course)
+        return model_to_dict(db_course)
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

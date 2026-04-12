@@ -1,0 +1,26 @@
+services:
+  golfshot-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: golfshot-backend
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+    networks:
+      - spcapps-network
+
+  golfshot-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://golfshot.spcapps.com/api
+    container_name: golfshot-frontend
+    restart: unless-stopped
+    networks:
+      - spcapps-network
+
+networks:
+  spcapps-network:
+    external: true
