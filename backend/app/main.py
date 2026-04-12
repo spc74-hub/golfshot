@@ -1,20 +1,30 @@
-import sys
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
+from app.database import create_tables, init_engine
 from app.routers import auth, users, courses, rounds, admin, players, templates, handicap_history
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    init_engine()
+    await create_tables()
+    yield
+    # Shutdown
+
 
 settings = get_settings()
 
-# Log CORS configuration at startup (flush immediately)
 cors_origins = settings.get_cors_origins()
 print(f"[CORS] Configured origins: {cors_origins}", flush=True)
-print(f"[CORS] Frontend URL from env: '{settings.frontend_url}'", flush=True)
 
 app = FastAPI(
     title="Golf Shot API",
     description="API for Golf Shot - Golf round tracking application",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Configure CORS

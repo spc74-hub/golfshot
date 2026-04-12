@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { supabase } from "@/lib/supabase";
+import { authApi } from "@/lib/api";
 import type { User, Permission } from "@/types";
 
 interface AuthContextType {
@@ -18,159 +18,67 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-
-    // Check active session
-    console.log("[Auth] Checking session...");
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      console.log("[Auth] Session result:", { session: !!session, error });
-      if (!isMounted) return;
-
-      if (session?.user) {
-        localStorage.setItem("access_token", session.access_token);
-        fetchUserProfile(session.user.id, session.user.email || "");
-      } else {
-        console.log("[Auth] No session, setting loading=false");
-        setLoading(false);
-      }
-    });
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("[Auth] onAuthStateChange:", event, { hasSession: !!session });
-      if (!isMounted) return;
-
-      if (event === "SIGNED_IN" && session?.user) {
-        // Skip if profile already loaded successfully
-        if (profileLoaded) {
-          console.log("[Auth] Profile already loaded, skipping duplicate fetch");
-          return;
-        }
-        console.log("[Auth] SIGNED_IN, fetching profile...");
-        localStorage.setItem("access_token", session.access_token);
-        await fetchUserProfile(session.user.id, session.user.email || "");
-      } else if (event === "SIGNED_OUT") {
-        console.log("[Auth] SIGNED_OUT");
-        setUser(null);
-        setProfileLoaded(false);
-        localStorage.removeItem("access_token");
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, [profileLoaded]);
-
-  async function fetchUserProfile(userId: string, email: string) {
-    // Skip if profile already loaded successfully
-    if (profileLoaded) {
-      console.log("[Auth] Profile already loaded, skipping fetch");
-      return;
+    // Check if we have a stored token and fetch user profile
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      fetchUserProfile();
+    } else {
+      setLoading(false);
     }
+  }, []);
 
-    console.log("[Auth] fetchUserProfile called:", { userId, email });
+  async function fetchUserProfile() {
     try {
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Profile fetch timeout")), 5000)
-      );
-
-      const fetchPromise = supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-
-      const result = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>;
-      const { data: profile, error } = result;
-      console.log("[Auth] Profile fetch result:", { profile, error });
-
-      if (error) {
-        console.warn("Profile not found, using defaults:", error.message);
-      }
-
-      // Set user even if profile doesn't exist (use defaults)
+      const data = await authApi.getMe();
+      // Transform snake_case response to camelCase
       setUser({
-        id: userId,
-        email,
-        displayName: profile?.display_name || null,
-        role: profile?.role || "user",
-        status: profile?.status || "active",
-        permissions: (profile?.permissions || []) as Permission[],
-        linkedPlayerId: profile?.linked_player_id || null,
-        createdAt: profile?.created_at || new Date().toISOString(),
-        updatedAt: profile?.updated_at || new Date().toISOString(),
+        id: (data as Record<string, unknown>).id as string,
+        email: (data as Record<string, unknown>).email as string,
+        displayName: ((data as Record<string, unknown>).display_name ?? (data as Record<string, unknown>).displayName ?? null) as string | null,
+        role: ((data as Record<string, unknown>).role ?? "user") as User["role"],
+        status: ((data as Record<string, unknown>).status ?? "active") as User["status"],
+        permissions: ((data as Record<string, unknown>).permissions ?? []) as Permission[],
+        linkedPlayerId: ((data as Record<string, unknown>).linked_player_id ?? (data as Record<string, unknown>).linkedPlayerId ?? null) as string | null,
+        createdAt: ((data as Record<string, unknown>).created_at ?? (data as Record<string, unknown>).createdAt ?? new Date().toISOString()) as string,
+        updatedAt: ((data as Record<string, unknown>).updated_at ?? (data as Record<string, unknown>).updatedAt ?? new Date().toISOString()) as string,
       });
-
-      // Mark profile as loaded successfully
-      setProfileLoaded(true);
-      console.log("[Auth] Profile loaded successfully, role:", profile?.role);
     } catch (error) {
       console.error("Error fetching user profile:", error);
-      // Only set defaults if we don't have a user yet
-      if (!user) {
-        setUser({
-          id: userId,
-          email,
-          displayName: null,
-          role: "user",
-          status: "active",
-          permissions: [],
-          linkedPlayerId: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      }
+      // Token is invalid, clear it
+      localStorage.removeItem("access_token");
     } finally {
-      console.log("[Auth] Setting loading=false");
       setLoading(false);
     }
   }
 
   async function login(email: string, password: string) {
-    console.log("[Auth] login called:", { email });
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    console.log("[Auth] login result:", { hasData: !!data, hasSession: !!data?.session, error });
-
-    if (error) throw error;
-
-    if (data.session) {
-      localStorage.setItem("access_token", data.session.access_token);
+    const data = await authApi.login(email, password);
+    if (data.access_token) {
+      localStorage.setItem("access_token", data.access_token);
     }
+    // Fetch user profile after login
+    await fetchUserProfile();
   }
 
   async function register(email: string, password: string, displayName?: string) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          display_name: displayName,
-        },
-      },
-    });
-
-    if (error) throw error;
-
-    if (data.session) {
+    const data = await authApi.register(email, password, displayName);
+    if (data.session?.access_token) {
       localStorage.setItem("access_token", data.session.access_token);
     }
+    // Fetch user profile after registration
+    await fetchUserProfile();
   }
 
   async function logout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    try {
+      await authApi.logout();
+    } catch {
+      // Ignore errors on logout
+    }
     localStorage.removeItem("access_token");
+    setUser(null);
   }
 
   const isOwner = user?.role === "owner";
@@ -178,7 +86,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function hasPermission(permission: Permission): boolean {
     if (!user) return false;
-    // Owner and admin have all permissions
     if (user.role === "owner" || user.role === "admin") return true;
     return user.permissions.includes(permission);
   }
