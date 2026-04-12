@@ -31,18 +31,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function fetchUserProfile() {
     try {
-      const data = await authApi.getMe();
-      // Transform snake_case response to camelCase
+      const data = await authApi.getMe() as unknown as Record<string, unknown>;
       setUser({
-        id: (data as Record<string, unknown>).id as string,
-        email: (data as Record<string, unknown>).email as string,
-        displayName: ((data as Record<string, unknown>).display_name ?? (data as Record<string, unknown>).displayName ?? null) as string | null,
-        role: ((data as Record<string, unknown>).role ?? "user") as User["role"],
-        status: ((data as Record<string, unknown>).status ?? "active") as User["status"],
-        permissions: ((data as Record<string, unknown>).permissions ?? []) as Permission[],
-        linkedPlayerId: ((data as Record<string, unknown>).linked_player_id ?? (data as Record<string, unknown>).linkedPlayerId ?? null) as string | null,
-        createdAt: ((data as Record<string, unknown>).created_at ?? (data as Record<string, unknown>).createdAt ?? new Date().toISOString()) as string,
-        updatedAt: ((data as Record<string, unknown>).updated_at ?? (data as Record<string, unknown>).updatedAt ?? new Date().toISOString()) as string,
+        id: data.id as string,
+        email: data.email as string,
+        displayName: (data.display_name ?? data.displayName ?? null) as string | null,
+        role: (data.role ?? "user") as User["role"],
+        status: (data.status ?? "active") as User["status"],
+        permissions: (data.permissions ?? []) as Permission[],
+        linkedPlayerId: (data.linked_player_id ?? data.linkedPlayerId ?? null) as string | null,
+        createdAt: (data.created_at ?? data.createdAt ?? new Date().toISOString()) as string,
+        updatedAt: (data.updated_at ?? data.updatedAt ?? new Date().toISOString()) as string,
       });
     } catch (error) {
       console.error("Error fetching user profile:", error);
