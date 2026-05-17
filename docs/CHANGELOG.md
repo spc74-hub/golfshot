@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-05-17
+- **feat:** Permitir registrar putts con valor 0 (chip-in o golpe metido desde fuera del green) — arreglo del fallback `||` que trataba 0 como falsy
+- **feat:** Reabrir partida finalizada para editarla — nuevo endpoint `PATCH /rounds/{id}/reopen` y botón en Historial con confirmación
+
 ## 2026-04-14
 - **docs:** Generación completa de documentación del proyecto (CLAUDE.md, USER_GUIDE, PROCESSES, CHANGELOG, BACKLOG)
 

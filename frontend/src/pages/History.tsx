@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
-import { useRounds, useDeleteRound } from "@/hooks/useRounds";
+import { Link, useNavigate } from "react-router-dom";
+import { useRounds, useDeleteRound, useReopenRound } from "@/hooks/useRounds";
 import { useCourses } from "@/hooks/useCourses";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +24,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Play, Trash2, Eye, Edit, Flag, Upload, ChevronDown, ChevronRight, TrendingUp, Target, Circle } from "lucide-react";
+import { Play, Trash2, Eye, Flag, Upload, ChevronDown, ChevronRight, TrendingUp, Target, Circle, RotateCcw } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useState, useMemo } from "react";
@@ -365,10 +365,13 @@ function calculateRoundSummary(
 }
 
 export function History() {
+  const navigate = useNavigate();
   const { data: rounds, isLoading } = useRounds();
   const { data: courses } = useCourses();
   const deleteRound = useDeleteRound();
+  const reopenRound = useReopenRound();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [reopenId, setReopenId] = useState<string | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
 
   // Create courses map for quick lookup
@@ -422,6 +425,15 @@ export function History() {
     if (deleteId) {
       await deleteRound.mutateAsync(deleteId);
       setDeleteId(null);
+    }
+  };
+
+  const handleReopen = async () => {
+    if (reopenId) {
+      const id = reopenId;
+      await reopenRound.mutateAsync(id);
+      setReopenId(null);
+      navigate(`/round/play?id=${id}`);
     }
   };
 
@@ -707,11 +719,14 @@ export function History() {
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
-                              <Link to={`/round/play?id=${round.id}`}>
-                                <Button variant="outline" size="sm">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </Link>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setReopenId(round.id)}
+                                title="Reabrir y editar"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
                             </>
                           ) : (
                             <Link to={`/round/play?id=${round.id}`}>
@@ -780,6 +795,32 @@ export function History() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={reopenId !== null}
+        onOpenChange={(open) => !open && setReopenId(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reabrir partida</DialogTitle>
+            <DialogDescription>
+              La partida volverá a estar en curso y podrás editar los golpes y putts hoyo
+              a hoyo. El Handicap Virtual se recalculará cuando vuelvas a finalizarla.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReopenId(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleReopen}
+              disabled={reopenRound.isPending}
+            >
+              {reopenRound.isPending ? "Reabriendo..." : "Reabrir y editar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

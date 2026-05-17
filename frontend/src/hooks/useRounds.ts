@@ -64,3 +64,15 @@ export function useFinishRound() {
     },
   });
 }
+
+export function useReopenRound() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => roundsApi.reopen(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["rounds"] });
+      queryClient.invalidateQueries({ queryKey: ["rounds", id] });
+    },
+  });
+}

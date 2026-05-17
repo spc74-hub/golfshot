@@ -167,6 +167,7 @@ golfshot-migration/
 - `PUT /{id}` — Actualizar partida (owner o colaborador)
 - `DELETE /{id}` — Eliminar partida (owner)
 - `PATCH /{id}/finish` — Finalizar partida
+- `PATCH /{id}/reopen` — Reabrir partida finalizada para editarla
 - `POST /import/extract` — Extraer partida desde imagen OCR
 - `POST /import/save` — Guardar partida importada
 - `POST /join` — Unirse a partida compartida por código

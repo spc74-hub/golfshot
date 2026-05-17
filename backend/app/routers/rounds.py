@@ -440,6 +440,27 @@ async def finish_round(
     return round_model_to_dict(existing, is_owner=True)
 
 
+@router.patch("/{round_id}/reopen", response_model=RoundResponse)
+async def reopen_round(
+    round_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reopen a finished round so it can be edited again."""
+    result = await db.execute(select(RoundModel).where(RoundModel.id == round_id))
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Round not found")
+    if existing.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    existing.is_finished = False
+    existing.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(existing)
+    return round_model_to_dict(existing, is_owner=True)
+
+
 # Import round from image endpoints
 @router.post("/import/extract")
 async def extract_round_from_image(

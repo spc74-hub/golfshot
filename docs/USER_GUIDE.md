@@ -91,8 +91,8 @@ La pantalla principal muestra:
 
 ### Registro de Scores
 - Para cada jugador en el hoyo actual:
-  - **Golpes**: selector numérico (+/-)
-  - **Putts**: selector numérico (+/-)
+  - **Golpes**: selector numérico (+/-), mínimo 1
+  - **Putts**: selector numérico (+/-), mínimo 0 (usa 0 si metiste la bola desde fuera del green sin necesidad de putt)
 - Los puntos Stableford se calculan automáticamente
 - Color del resultado según diferencia con el par:
   - 🟠 Eagle o mejor
@@ -145,8 +145,9 @@ Vista de la tarjeta completa de la partida:
 - Indicador de partida importada vs jugada en la app
 
 ### Acciones por Partida
-- **Ver tarjeta**: abre la tarjeta completa (RoundCard)
+- **Ver tarjeta**: abre la tarjeta completa (RoundCard) — solo partidas finalizadas
 - **Continuar**: si la partida no está finalizada, permite retomarla
+- **Reabrir**: en partidas finalizadas, marca la partida como en curso de nuevo y abre la pantalla de juego para editar golpes y putts. El Handicap Virtual se recalcula al volver a finalizarla
 - **Eliminar**: elimina la partida (solo el propietario)
 
 ### Detalles por Jugador

@@ -883,7 +883,7 @@ export function RoundPlay() {
                       size="sm"
                       className="h-10 w-10"
                       onClick={() =>
-                        updatePutts(player.id, (playerScores[player.id]?.putts || 2) - 1)
+                        updatePutts(player.id, (playerScores[player.id]?.putts ?? DEFAULT_PUTTS) - 1)
                       }
                     >
                       -
@@ -891,10 +891,11 @@ export function RoundPlay() {
                     <Input
                       type="number"
                       min={0}
-                      value={playerScores[player.id]?.putts || DEFAULT_PUTTS}
-                      onChange={(e) =>
-                        updatePutts(player.id, parseInt(e.target.value) || 0)
-                      }
+                      value={playerScores[player.id]?.putts ?? DEFAULT_PUTTS}
+                      onChange={(e) => {
+                        const parsed = parseInt(e.target.value);
+                        updatePutts(player.id, isNaN(parsed) ? 0 : parsed);
+                      }}
                       className="h-10 w-14 text-center text-lg font-bold"
                     />
                     <Button
@@ -902,7 +903,7 @@ export function RoundPlay() {
                       size="sm"
                       className="h-10 w-10"
                       onClick={() =>
-                        updatePutts(player.id, (playerScores[player.id]?.putts || 2) + 1)
+                        updatePutts(player.id, (playerScores[player.id]?.putts ?? DEFAULT_PUTTS) + 1)
                       }
                     >
                       +

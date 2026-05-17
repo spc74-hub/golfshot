@@ -490,6 +490,11 @@ export const roundsApi = {
     return transformRound(result as Record<string, unknown>);
   },
 
+  reopen: async (id: string): Promise<Round> => {
+    const result = await fetchWithAuth(`/rounds/${id}/reopen`, { method: "PATCH" });
+    return transformRound(result as Record<string, unknown>);
+  },
+
   // Import round from image
   extractFromImage: async (file: File): Promise<{ success: boolean; message: string; round_data: ImportedRoundData }> => {
     const token = localStorage.getItem("access_token");
