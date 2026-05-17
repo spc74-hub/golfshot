@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
-import { useRound } from "@/hooks/useRounds";
+import { useRound, useReopenRound } from "@/hooks/useRounds";
 import { useCourse } from "@/hooks/useCourses";
 import {
   calculateStablefordPoints,
@@ -18,7 +18,15 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Play, Flag } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowLeft, Play, Flag, RotateCcw } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import type { Player, HoleData } from "@/types";
@@ -31,6 +39,15 @@ export function RoundCard() {
 
   const { data: round, isLoading: roundLoading } = useRound(roundId || undefined);
   const { data: course } = useCourse(round?.courseId);
+  const reopenRound = useReopenRound();
+  const [showReopenDialog, setShowReopenDialog] = useState(false);
+
+  const handleReopen = async () => {
+    if (!roundId) return;
+    await reopenRound.mutateAsync(roundId);
+    setShowReopenDialog(false);
+    navigate(`/round/play?id=${roundId}`);
+  };
 
   // Get holes for this round
   const holes = useMemo(() => {
@@ -287,13 +304,22 @@ export function RoundCard() {
             )}
           </div>
         </div>
-        {!round.isFinished && (
+        {!round.isFinished ? (
           <Link to={`/round/play?id=${round.id}`}>
             <Button size="sm">
               <Play className="h-4 w-4 mr-1" />
               Jugar
             </Button>
           </Link>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowReopenDialog(true)}
+          >
+            <RotateCcw className="h-4 w-4 mr-1" />
+            Reabrir
+          </Button>
         )}
       </div>
 
@@ -835,6 +861,26 @@ export function RoundCard() {
         <Flag className="inline h-3 w-3 mr-1" />
         Los hoyos sin completar aparecen en gris
       </div>
+
+      <Dialog open={showReopenDialog} onOpenChange={setShowReopenDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reabrir partida</DialogTitle>
+            <DialogDescription>
+              La partida volverá a estar en curso y podrás editar los golpes y putts hoyo
+              a hoyo. El Handicap Virtual se recalculará cuando vuelvas a finalizarla.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowReopenDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleReopen} disabled={reopenRound.isPending}>
+              {reopenRound.isPending ? "Reabriendo..." : "Reabrir y editar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
