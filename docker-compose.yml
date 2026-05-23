@@ -9,6 +9,8 @@ services:
     restart: unless-stopped
     networks:
       - spcapps-network
+    cpus: 1.0
+    mem_limit: 1g
 
   golfshot-frontend:
     build:
@@ -20,6 +22,8 @@ services:
     restart: unless-stopped
     networks:
       - spcapps-network
+    cpus: 0.5
+    mem_limit: 512m
 
 networks:
   spcapps-network:
