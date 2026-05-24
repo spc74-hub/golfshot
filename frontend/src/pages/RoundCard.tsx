@@ -14,6 +14,8 @@ import {
   getMatchPlayHolesRemaining,
   calculatePlayingHandicap,
   calculate75PercentDifferenceHDJ,
+  getParForLength,
+  getEffectiveHoleHandicaps,
 } from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,15 +61,23 @@ export function RoundCard() {
   const front9 = useMemo(() => holes.filter(h => h <= 9), [holes]);
   const back9 = useMemo(() => holes.filter(h => h > 9), [holes]);
 
-  // Helper to recalculate HDJ if stored as 0 (legacy rounds)
-  // Always calculates at 100% - the stored playingHandicap should now always be 100%
+  // Holes-played + effective (renumbered) hole handicaps for WHS-correct
+  // strokes-received distribution. For 18-hole rounds these are the identity values.
+  const totalHoles = round?.courseLength === "18" ? 18 : 9;
+  const effectiveHoleHcpMap = useMemo(() => {
+    if (!course || !round) return new Map<number, number>();
+    return getEffectiveHoleHandicaps(course.holesData, round.courseLength);
+  }, [course, round?.courseLength]);
+
+  // Helper to recalculate HDJ if stored as 0 (legacy rounds).
+  // Uses the WHS formula when tee rating/par are available.
   const recalculateHDJ = (player: Player): number => {
-    if (!course || player.playingHandicap !== 0) return player.playingHandicap;
-    // Find the tee slope for this player
-    const tee = course.tees?.find((t: { name: string; slope: number }) => t.name === player.teeBox);
+    if (!course || !round || player.playingHandicap !== 0) return player.playingHandicap;
+    const tee = course.tees?.find((t: { name: string; slope: number; rating?: number }) => t.name === player.teeBox);
     if (!tee) return player.playingHandicap;
-    // Recalculate using the stored handicap index and tee slope at 100%
-    return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, 100);
+    const parPlayed = getParForLength(course.holesData, round.courseLength);
+    const holesPlayed = round.courseLength === "18" ? 18 : 9;
+    return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, tee.rating, parPlayed, holesPlayed);
   };
 
   // Get the effective handicap for Stableford/Stats (always 100% HDJ)
@@ -126,11 +136,16 @@ export function RoundCard() {
         ...p,
         playingHandicap: getEffectiveHandicap(p),
       }));
+      const effHoleHcp = effectiveHoleHcpMap.get(holeNum) ?? holeData.handicap;
+      const patchedHolesData = course.holesData.map((h: HoleData) =>
+        h.number === holeNum ? { ...h, handicap: effHoleHcp } : h
+      );
       const sindicatoPoints = calculateSindicatoPoints(
         playersWithEffectiveHcp,
         holeNum,
-        course.holesData,
-        round.sindicatoPoints || [4, 2, 1, 0]
+        patchedHolesData,
+        round.sindicatoPoints || [4, 2, 1, 0],
+        totalHoles,
       );
       return sindicatoPoints.get(player.id) || 0;
     }
@@ -139,7 +154,8 @@ export function RoundCard() {
       score.strokes,
       holeData.par,
       effectiveHandicap,
-      holeData.handicap
+      effectiveHoleHcpMap.get(holeNum) ?? holeData.handicap,
+      totalHoles,
     );
   };
 
@@ -158,7 +174,8 @@ export function RoundCard() {
       score.strokes,
       holeData.par,
       effectiveHandicap,
-      holeData.handicap
+      effectiveHoleHcpMap.get(holeNum) ?? holeData.handicap,
+      totalHoles,
     );
   };
 
@@ -220,7 +237,11 @@ export function RoundCard() {
     const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
     if (!holeData) return false;
     const effectiveHcp = getEffectiveHandicap(player);
-    return calculateStrokesReceived(effectiveHcp, holeData.handicap) > 0;
+    return calculateStrokesReceived(
+      effectiveHcp,
+      effectiveHoleHcpMap.get(holeNum) ?? holeData.handicap,
+      totalHoles,
+    ) > 0;
   };
 
   // Check if GIR (Green in Regulation) was achieved
@@ -340,13 +361,12 @@ export function RoundCard() {
                 ...round.players[1],
                 playingHandicap: getMatchPlayHandicap(round.players[1]),
               };
-              const is9Holes = round.courseLength !== "18";
               const matchScore = calculateMatchPlayScore(
                 player1WithMatchPlayHcp,
                 player2WithMatchPlayHcp,
                 round.completedHoles || [],
                 course.holesData,
-                is9Holes
+                round.courseLength,
               );
               const holesRemaining = getMatchPlayHolesRemaining(
                 round.courseLength,
@@ -359,13 +379,25 @@ export function RoundCard() {
                 const score = round.players[0].scores[h];
                 const holeData = course.holesData.find((hd: HoleData) => hd.number === h);
                 if (!score || !holeData) return sum;
-                return sum + calculateStablefordPoints(score.strokes, holeData.par, player1EffectiveHcp, holeData.handicap);
+                return sum + calculateStablefordPoints(
+                  score.strokes,
+                  holeData.par,
+                  player1EffectiveHcp,
+                  effectiveHoleHcpMap.get(h) ?? holeData.handicap,
+                  totalHoles,
+                );
               }, 0);
               const player2Stableford = holes.reduce((sum, h) => {
                 const score = round.players[1].scores[h];
                 const holeData = course.holesData.find((hd: HoleData) => hd.number === h);
                 if (!score || !holeData) return sum;
-                return sum + calculateStablefordPoints(score.strokes, holeData.par, player2EffectiveHcp, holeData.handicap);
+                return sum + calculateStablefordPoints(
+                  score.strokes,
+                  holeData.par,
+                  player2EffectiveHcp,
+                  effectiveHoleHcpMap.get(h) ?? holeData.handicap,
+                  totalHoles,
+                );
               }, 0);
 
               // Determine colors: UP = blue, DN = red, AS = neutral

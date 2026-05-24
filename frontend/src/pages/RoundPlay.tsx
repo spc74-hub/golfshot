@@ -14,6 +14,8 @@ import {
   getMatchPlayHolesRemaining,
   calculatePlayingHandicap,
   calculate75PercentDifferenceHDJ,
+  getParForLength,
+  getEffectiveHoleHandicaps,
 } from "@/lib/calculations";
 import {
   Card,
@@ -289,16 +291,17 @@ export function RoundPlay() {
     }
   };
 
-  // Helper to recalculate HDJ if stored as 0 (legacy rounds)
-  // Always calculates at 100% - the stored playingHandicap should now always be 100%
+  // Helper to recalculate HDJ if stored as 0 (legacy rounds).
+  // Uses the WHS formula when tee rating/par are available, falls back to the
+  // simplified formula otherwise.
   const recalculateHDJ = useCallback((player: Player): number => {
-    if (!course || player.playingHandicap !== 0) return player.playingHandicap;
-    // Find the tee slope for this player
-    const tee = course.tees?.find((t: { name: string; slope: number }) => t.name === player.teeBox);
+    if (!course || !round || player.playingHandicap !== 0) return player.playingHandicap;
+    const tee = course.tees?.find((t: { name: string; slope: number; rating?: number }) => t.name === player.teeBox);
     if (!tee) return player.playingHandicap;
-    // Recalculate using the stored handicap index and tee slope at 100%
-    return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, 100);
-  }, [course]);
+    const parPlayed = getParForLength(course.holesData, round.courseLength);
+    const holesPlayed = round.courseLength === "18" ? 18 : 9;
+    return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, tee.rating, parPlayed, holesPlayed);
+  }, [course, round]);
 
   // Get the effective handicap for Stableford/Stats (always 100% HDJ)
   const getEffectiveHandicap = useCallback((player: Player): number => {
@@ -339,6 +342,14 @@ export function RoundPlay() {
     return recalculateHDJ(player);
   }, [round, golpesVentajaMap, recalculateHDJ]);
 
+  // Holes-played count + effective (renumbered) hole handicaps for WHS-correct
+  // strokes-received distribution. For 18-hole rounds these are the identity values.
+  const totalHoles = round?.courseLength === "18" ? 18 : 9;
+  const effectiveHoleHcpMap = useMemo(() => {
+    if (!course || !round) return new Map<number, number>();
+    return getEffectiveHoleHandicaps(course.holesData, round.courseLength);
+  }, [course, round?.courseLength]);
+
   // Calculate total points for a player (only completed holes)
   const getTotalPoints = useCallback((player: Player): number => {
     if (!course) return 0;
@@ -355,11 +366,18 @@ export function RoundPlay() {
           ...p,
           playingHandicap: getEffectiveHandicap(p),
         }));
+        const holeData = course.holesData.find((h: HoleData) => h.number === holeNum);
+        const effHoleHcp = effectiveHoleHcpMap.get(holeNum) ?? holeData?.handicap ?? 1;
+        // Pass holesData with effective handicap on the current hole so Sindicato ranking is WHS-correct
+        const patchedHolesData = course.holesData.map((h: HoleData) =>
+          h.number === holeNum ? { ...h, handicap: effHoleHcp } : h
+        );
         const sindicatoPoints = calculateSindicatoPoints(
           playersWithEffectiveHcp,
           holeNum,
-          course.holesData,
-          round.sindicatoPoints || [4, 2, 1, 0]
+          patchedHolesData,
+          round.sindicatoPoints || [4, 2, 1, 0],
+          totalHoles,
         );
         total += sindicatoPoints.get(player.id) || 0;
       });
@@ -373,13 +391,14 @@ export function RoundPlay() {
             score.strokes,
             holeData.par,
             effectiveHandicap,
-            holeData.handicap
+            effectiveHoleHcpMap.get(holeNum) ?? holeData.handicap,
+            totalHoles,
           );
         }
       });
     }
     return total;
-  }, [course, round, getEffectiveHandicap]);
+  }, [course, round, getEffectiveHandicap, effectiveHoleHcpMap, totalHoles]);
 
   // Calculate Stableford points for a player (always, for personal info)
   const getStablefordPoints = useCallback((player: Player): number => {
@@ -397,12 +416,13 @@ export function RoundPlay() {
           score.strokes,
           holeData.par,
           effectiveHandicap,
-          holeData.handicap
+          effectiveHoleHcpMap.get(holeNum) ?? holeData.handicap,
+          totalHoles,
         );
       }
     });
     return total;
-  }, [course, round, getEffectiveHandicap]);
+  }, [course, round, getEffectiveHandicap, effectiveHoleHcpMap, totalHoles]);
 
   // Get Stableford points for current hole - memoized per player
   const holePointsMap = useMemo(() => {
@@ -417,12 +437,13 @@ export function RoundPlay() {
           score.strokes,
           currentHoleData.par,
           effectiveHcp,
-          currentHoleData.handicap
+          effectiveHoleHcpMap.get(currentHoleData.number) ?? currentHoleData.handicap,
+          totalHoles,
         ));
       }
     });
     return map;
-  }, [currentHoleData, round, playerScores, getEffectiveHandicap]);
+  }, [currentHoleData, round, playerScores, getEffectiveHandicap, effectiveHoleHcpMap, totalHoles]);
 
   const getHolePoints = useCallback((player: Player): number => {
     return holePointsMap.get(player.id) || 0;
@@ -717,13 +738,12 @@ export function RoundPlay() {
           ...round.players[1],
           playingHandicap: getMatchPlayHandicap(round.players[1]),
         };
-        const is9Holes = round.courseLength !== "18";
         const matchScore = calculateMatchPlayScore(
           player1WithMatchPlayHcp,
           player2WithMatchPlayHcp,
           round.completedHoles || [],
           course.holesData,
-          is9Holes
+          round.courseLength,
         );
         const player1Result = formatMatchPlayScore(matchScore, 0);
         const player2Result = formatMatchPlayScore(matchScore, 1);
@@ -785,7 +805,11 @@ export function RoundPlay() {
         // For stroke indicator, use match play handicap when in 75% mode
         const hcpForStrokes = round.handicapPercentage === 75 ? matchPlayHcp : effectiveHcp;
         const hasStrokeOnCurrentHole = currentHoleData
-          ? calculateStrokesReceived(hcpForStrokes, currentHoleData.handicap) > 0
+          ? calculateStrokesReceived(
+              hcpForStrokes,
+              effectiveHoleHcpMap.get(currentHoleData.number) ?? currentHoleData.handicap,
+              totalHoles,
+            ) > 0
           : false;
         const holesCompleted = (round.completedHoles || []).length;
         const expectedPoints = holesCompleted * 2;

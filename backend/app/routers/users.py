@@ -667,6 +667,15 @@ def _calculate_stats(rounds, courses, today):
         else:
             holes_to_count = range(1, 19)
 
+        # Renumber hole handicaps 1..9 for 9-hole rounds (by relative difficulty)
+        round_total_holes = 9 if course_length in ("front9", "back9") else 18
+        if round_total_holes == 9:
+            played_holes_data = [holes_data_map[n] for n in holes_to_count if n in holes_data_map]
+            sorted_played = sorted(played_holes_data, key=lambda h: h.get("handicap", 18))
+            effective_hcp_map = {h.get("number"): idx + 1 for idx, h in enumerate(sorted_played)}
+        else:
+            effective_hcp_map = {n: holes_data_map[n].get("handicap", 1) for n in holes_to_count if n in holes_data_map}
+
         round_strokes = 0
         round_putts = 0
         round_stableford = 0
@@ -684,7 +693,7 @@ def _calculate_stats(rounds, courses, today):
                 continue
 
             par = hole_data.get("par", 4)
-            handicap = hole_data.get("handicap", 1)
+            handicap = effective_hcp_map.get(hole_num, hole_data.get("handicap", 1))
 
             if par == 3:
                 par3_strokes.append(strokes)
@@ -720,8 +729,8 @@ def _calculate_stats(rounds, courses, today):
             playing_hcp = user_player.get("playing_handicap", 0)
             strokes_received = 0
             if playing_hcp > 0:
-                base_s = playing_hcp // 18
-                remainder = playing_hcp % 18
+                base_s = playing_hcp // round_total_holes
+                remainder = playing_hcp % round_total_holes
                 strokes_received = base_s + (1 if handicap <= remainder else 0)
 
             net_score = strokes - strokes_received

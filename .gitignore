@@ -43,3 +43,6 @@ Thumbs.db
 
 # Supabase local
 supabase/.temp/
+
+# Private reference documents (RFEG handicap PDFs, etc.)
+RFEG/

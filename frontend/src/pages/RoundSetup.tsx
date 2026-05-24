@@ -5,7 +5,7 @@ import { useCreateRound } from "@/hooks/useRounds";
 import { usePlayers, useCreatePlayer } from "@/hooks/usePlayers";
 import { useTemplates, useTemplate } from "@/hooks/useTemplates";
 import { useAuth } from "@/context/AuthContext";
-import { calculatePlayingHandicap, calculate75PercentDifferenceHDJ } from "@/lib/calculations";
+import { calculatePlayingHandicap, calculate75PercentDifferenceHDJ, getParForLength } from "@/lib/calculations";
 import { coursesApi } from "@/lib/api";
 import {
   Card,
@@ -250,15 +250,31 @@ export function RoundSetup() {
     setTemplateApplied(true);
   };
 
-  // Calculate initial HDJ for a player (always at 100%)
-  // The HDJ stored is always the real 100% value - 75% difference is calculated separately for display
+  // Calculate initial HDJ for a player using the WHS formula at 100%.
+  // The stored HDJ is always the real 100% value — 75% difference is calculated separately for display.
   const calculateInitialHDJ = (handicapIndex: number, teeName: string): number => {
     if (!selectedCourse) return 0;
     const tee = selectedCourse.tees.find((t) => t.name === teeName);
     if (!tee) return 0;
-    // Always calculate the real HDJ at 100%
-    return calculatePlayingHandicap(handicapIndex, tee.slope, 100);
+    const parPlayed = getParForLength(selectedCourse.holesData, courseLength);
+    const holesPlayed = courseLength === "18" ? 18 : 9;
+    return calculatePlayingHandicap(handicapIndex, tee.slope, tee.rating, parPlayed, holesPlayed);
   };
+
+  // Re-propose HDJ for every player whenever course or length changes
+  // (manual overrides via "Editar HDJ" will be lost — the user has to re-edit if they want a custom value)
+  useEffect(() => {
+    if (!selectedCourse || players.length === 0) return;
+    const parPlayed = getParForLength(selectedCourse.holesData, courseLength);
+    const holesPlayed = courseLength === "18" ? 18 : 9;
+    setPlayers(prev => prev.map(p => {
+      const tee = selectedCourse.tees.find(t => t.name === p.teeBox);
+      if (!tee) return p;
+      const newHDJ = calculatePlayingHandicap(p.odHandicapIndex, tee.slope, tee.rating, parPlayed, holesPlayed);
+      return p.playingHandicap === newHDJ ? p : { ...p, playingHandicap: newHDJ };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseLength, selectedCourse?.id]);
 
   // Calculate the golpes de ventaja for 75% handicap mode
   const golpesVentajaMap = useMemo(() => {

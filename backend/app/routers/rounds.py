@@ -17,10 +17,42 @@ import string
 router = APIRouter(prefix="/rounds", tags=["rounds"])
 
 
-def calculate_playing_handicap(handicap_index: float, slope: int, percentage: int = 100) -> int:
-    """Calculate playing handicap from handicap index and slope."""
-    playing_hcp = (handicap_index * slope) / 113
-    return round(playing_hcp * percentage / 100)
+def calculate_playing_handicap(
+    handicap_index: float,
+    slope: int,
+    rating: float | None = None,
+    par_played: int | None = None,
+    holes_played: int = 18,
+) -> int:
+    """Calculate Playing Handicap (HDJ) using the WHS formula.
+
+    Full WHS (requires rating + par):
+        18 holes: HDJ = HI × (Slope/113) + (Rating − Par)
+         9 holes: HDJ = (HI/2) × (Slope/113) + (Rating/2 − Par_played)
+
+    If rating/par are missing, falls back to the simplified formula
+    `HI × Slope/113` so legacy data keeps working.
+    """
+    if rating is not None and par_played is not None:
+        if holes_played == 9:
+            playing_hcp = (handicap_index / 2) * slope / 113 + (rating / 2 - par_played)
+        else:
+            playing_hcp = handicap_index * slope / 113 + (rating - par_played)
+    else:
+        playing_hcp = handicap_index * slope / 113
+    return round(playing_hcp)
+
+
+def _par_for_length(holes_data: list, course_length: str) -> int:
+    """Sum the par of the holes actually played given a course_length."""
+    if course_length == "front9":
+        played = range(1, 10)
+    elif course_length == "back9":
+        played = range(10, 19)
+    else:
+        played = range(1, 19)
+    played_set = set(played)
+    return sum(int(h.get("par", 0)) for h in (holes_data or []) if h.get("number") in played_set)
 
 
 def generate_share_code() -> str:
@@ -69,7 +101,12 @@ def calculate_virtual_handicap(
         matching_tee = next((t for t in tees if t.get("name") == tee_box), None)
         if matching_tee:
             slope = matching_tee.get("slope", 113)
-            playing_handicap = calculate_playing_handicap(od_handicap_index, slope, 100)
+            rating = matching_tee.get("rating")
+            holes_played = 9 if course_length in ("front9", "back9") else 18
+            par_played = _par_for_length(holes_data, course_length) if rating is not None else None
+            playing_handicap = calculate_playing_handicap(
+                od_handicap_index, slope, rating, par_played, holes_played,
+            )
 
     effective_handicap = playing_handicap
 
@@ -81,6 +118,15 @@ def calculate_virtual_handicap(
         holes_to_count = range(1, 19)
 
     holes_lookup = {h.get("number"): h for h in holes_data}
+
+    # Renumber hole handicaps 1..9 for 9-hole rounds (by relative difficulty)
+    total_holes = 9 if course_length in ("front9", "back9") else 18
+    if total_holes == 9:
+        played_holes = [holes_lookup[n] for n in holes_to_count if n in holes_lookup]
+        sorted_holes = sorted(played_holes, key=lambda h: h.get("handicap", 18))
+        effective_hcp_map = {h.get("number"): idx + 1 for idx, h in enumerate(sorted_holes)}
+    else:
+        effective_hcp_map = {n: holes_lookup[n].get("handicap", 1) for n in holes_to_count if n in holes_lookup}
 
     total_stableford = 0
     holes_played = 0
@@ -100,12 +146,12 @@ def calculate_virtual_handicap(
             continue
 
         par = hole_data.get("par", 4)
-        handicap_index = hole_data.get("handicap", 1)
+        handicap_index = effective_hcp_map.get(hole_num, hole_data.get("handicap", 1))
 
         strokes_received = 0
         if effective_handicap > 0:
-            base_strokes = effective_handicap // 18
-            remainder = effective_handicap % 18
+            base_strokes = effective_handicap // total_holes
+            remainder = effective_handicap % total_holes
             strokes_received = base_strokes + (1 if handicap_index <= remainder else 0)
 
         net_score = strokes - strokes_received
@@ -254,8 +300,14 @@ async def create_round(
             if player.playing_handicap is not None and player.playing_handicap > 0:
                 playing_handicap = player.playing_handicap
             else:
+                holes_played = 9 if round_data.course_length in ("front9", "back9") else 18
+                par_played = _par_for_length(course.holes_data or [], round_data.course_length)
                 playing_handicap = calculate_playing_handicap(
-                    player.od_handicap_index, tee["slope"], 100,
+                    player.od_handicap_index,
+                    tee["slope"],
+                    tee.get("rating"),
+                    par_played,
+                    holes_played,
                 )
 
             players.append({
@@ -570,13 +622,27 @@ async def save_imported_round(
 
         tee_played = course_info.get("tee_played", {})
         tee_slope = tee_played.get("slope", 113)
+        tee_rating = tee_played.get("rating")
         player_handicap_index = round_info.get("handicap_index", 24.0)
 
         calculated_hdj = round_info.get("calculated_hdj", 0)
         if calculated_hdj > 0:
             playing_handicap = calculated_hdj
         else:
-            playing_handicap = calculate_playing_handicap(player_handicap_index, tee_slope)
+            import_course_length = import_data.get("course_length", "18")
+            imported_holes_played = 9 if import_course_length in ("front9", "back9") else 18
+            import_par_played = (
+                _par_for_length(course["holes_data"] if course else holes_data, import_course_length)
+                if tee_rating is not None
+                else None
+            )
+            playing_handicap = calculate_playing_handicap(
+                player_handicap_index,
+                tee_slope,
+                tee_rating,
+                import_par_played,
+                imported_holes_played,
+            )
 
         scores = {}
         completed_holes = []

@@ -1,17 +1,46 @@
 import type { Player, HoleData, StablefordResult } from "@/types";
 
 /**
- * Calculate playing handicap from handicap index and slope
- * Always calculates at 100% - the percentage parameter is kept for backwards compatibility
- * but should NOT be used for 75% calculations (use calculate75PercentDifferenceHDJ instead)
+ * Calculate Playing Handicap (HDJ) using the WHS formula.
+ *
+ * Full WHS (when rating + parPlayed are supplied):
+ *   18 holes: HDJ = HI × (Slope/113) + (Rating − Par)
+ *    9 holes: HDJ = (HI/2) × (Slope/113) + (Rating/2 − ParPlayed)
+ *
+ * Falls back to the simplified `HI × Slope/113` when rating/par are missing,
+ * which keeps legacy rounds (created before the WHS fix) working.
  */
 export function calculatePlayingHandicap(
   handicapIndex: number,
   slope: number,
-  percentage: number = 100
+  rating?: number,
+  parPlayed?: number,
+  holesPlayed: 9 | 18 = 18,
 ): number {
-  const playingHcp = (handicapIndex * slope) / 113;
-  return Math.round((playingHcp * percentage) / 100);
+  if (rating !== undefined && parPlayed !== undefined) {
+    const hcp = holesPlayed === 9
+      ? (handicapIndex / 2) * slope / 113 + (rating / 2 - parPlayed)
+      : handicapIndex * slope / 113 + (rating - parPlayed);
+    return Math.round(hcp);
+  }
+  return Math.round((handicapIndex * slope) / 113);
+}
+
+/**
+ * Sum the par of the holes actually played for a given course_length.
+ */
+export function getParForLength(
+  holesData: HoleData[],
+  courseLength: "18" | "front9" | "back9",
+): number {
+  const played = courseLength === "front9"
+    ? new Set([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    : courseLength === "back9"
+      ? new Set([10, 11, 12, 13, 14, 15, 16, 17, 18])
+      : new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+  return holesData
+    .filter(h => played.has(h.number))
+    .reduce((sum, h) => sum + h.par, 0);
 }
 
 /**
@@ -46,42 +75,78 @@ export function calculate75PercentDifferenceHDJ(
 }
 
 /**
- * Calculate strokes received on a specific hole based on playing handicap
+ * Calculate strokes received on a specific hole based on playing handicap.
+ *
+ * `holeHandicap` should be the **effective** hole handicap relative to the
+ * holes actually played — 1..18 for a full round, 1..9 for a 9-hole round
+ * (use `getEffectiveHoleHandicaps` to renumber by relative difficulty).
+ *
+ * `totalHoles` is 18 for full rounds and 9 for front9/back9. This determines
+ * how the playing handicap is split into base strokes + extra strokes.
  */
 export function calculateStrokesReceived(
   playingHandicap: number,
-  holeHandicap: number
+  holeHandicap: number,
+  totalHoles: number = 18,
 ): number {
   if (playingHandicap <= 0) return 0;
 
-  const baseStrokes = Math.floor(playingHandicap / 18);
-  const remainder = playingHandicap % 18;
+  const baseStrokes = Math.floor(playingHandicap / totalHoles);
+  const remainder = playingHandicap % totalHoles;
 
   return holeHandicap <= remainder ? baseStrokes + 1 : baseStrokes;
 }
 
 /**
- * Calculate net score for a hole
+ * Build a Map<holeNumber, effectiveHandicap> where the played holes are
+ * renumbered 1..N by relative difficulty (lower = harder). For 18-hole
+ * rounds this is the identity mapping.
+ */
+export function getEffectiveHoleHandicaps(
+  holesData: HoleData[],
+  courseLength: "18" | "front9" | "back9",
+): Map<number, number> {
+  const map = new Map<number, number>();
+  if (courseLength === "18") {
+    holesData.forEach(h => map.set(h.number, h.handicap));
+    return map;
+  }
+  const playedSet = courseLength === "front9"
+    ? new Set([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    : new Set([10, 11, 12, 13, 14, 15, 16, 17, 18]);
+  const sorted = holesData
+    .filter(h => playedSet.has(h.number))
+    .slice()
+    .sort((a, b) => a.handicap - b.handicap);
+  sorted.forEach((h, idx) => map.set(h.number, idx + 1));
+  return map;
+}
+
+/**
+ * Calculate net score for a hole.
+ * See `calculateStrokesReceived` for the meaning of holeHandicap/totalHoles.
  */
 export function calculateNetScore(
   grossStrokes: number,
   playingHandicap: number,
-  holeHandicap: number
+  holeHandicap: number,
+  totalHoles: number = 18,
 ): number {
-  const strokesReceived = calculateStrokesReceived(playingHandicap, holeHandicap);
+  const strokesReceived = calculateStrokesReceived(playingHandicap, holeHandicap, totalHoles);
   return grossStrokes - strokesReceived;
 }
 
 /**
- * Calculate Stableford points for a hole
+ * Calculate Stableford points for a hole.
  */
 export function calculateStablefordPoints(
   grossStrokes: number,
   par: number,
   playingHandicap: number,
-  holeHandicap: number
+  holeHandicap: number,
+  totalHoles: number = 18,
 ): number {
-  const netScore = calculateNetScore(grossStrokes, playingHandicap, holeHandicap);
+  const netScore = calculateNetScore(grossStrokes, playingHandicap, holeHandicap, totalHoles);
   const diff = netScore - par;
 
   if (diff <= -3) return 5; // Albatross or better
@@ -118,10 +183,11 @@ export function getScoreResult(
   par: number,
   playingHandicap: number = 0,
   holeHandicap: number = 1,
-  useHandicap: boolean = false
+  useHandicap: boolean = false,
+  totalHoles: number = 18,
 ): StablefordResult {
   const score = useHandicap
-    ? calculateNetScore(grossStrokes, playingHandicap, holeHandicap)
+    ? calculateNetScore(grossStrokes, playingHandicap, holeHandicap, totalHoles)
     : grossStrokes;
   const diff = score - par;
 
@@ -141,7 +207,8 @@ export function calculateSindicatoPoints(
   players: Player[],
   holeNumber: number,
   holesData: HoleData[],
-  pointsConfig: number[] = [4, 2, 1, 0]
+  pointsConfig: number[] = [4, 2, 1, 0],
+  totalHoles: number = 18,
 ): Map<string, number> {
   const holeData = holesData.find((h) => h.number === holeNumber);
   if (!holeData) return new Map();
@@ -154,7 +221,8 @@ export function calculateSindicatoPoints(
       netScore: calculateNetScore(
         player.scores[holeNumber].strokes,
         player.playingHandicap,
-        holeData.handicap
+        holeData.handicap,
+        totalHoles,
       ),
     }))
     .sort((a, b) => a.netScore - b.netScore);
@@ -199,7 +267,8 @@ export function calculateBestBallPoints(
   players: Player[],
   holeNumber: number,
   holesData: HoleData[],
-  bestBallPoints: number = 1
+  bestBallPoints: number = 1,
+  totalHoles: number = 18,
 ): { teamA: number; teamB: number } {
   const holeData = holesData.find((h) => h.number === holeNumber);
   if (!holeData) return { teamA: 0, teamB: 0 };
@@ -215,7 +284,8 @@ export function calculateBestBallPoints(
         calculateNetScore(
           p.scores[holeNumber].strokes,
           p.playingHandicap,
-          holeData.handicap
+          holeData.handicap,
+          totalHoles,
         )
       )
     );
@@ -246,7 +316,8 @@ export function calculateGoodBadBallPoints(
   holeNumber: number,
   holesData: HoleData[],
   bestBallPoints: number = 1,
-  worstBallPoints: number = 1
+  worstBallPoints: number = 1,
+  totalHoles: number = 18,
 ): { teamA: number; teamB: number } {
   const holeData = holesData.find((h) => h.number === holeNumber);
   if (!holeData) return { teamA: 0, teamB: 0 };
@@ -258,7 +329,8 @@ export function calculateGoodBadBallPoints(
         calculateNetScore(
           p.scores[holeNumber].strokes,
           p.playingHandicap,
-          holeData.handicap
+          holeData.handicap,
+          totalHoles,
         )
       );
   };
@@ -311,6 +383,8 @@ export function calculateTotalStableford(
   courseLength: "18" | "front9" | "back9"
 ): number {
   const holes = getHolesForCourseLength(courseLength);
+  const totalHoles = courseLength === "18" ? 18 : 9;
+  const effectiveHcp = getEffectiveHoleHandicaps(holesData, courseLength);
 
   return holes.reduce((total, holeNum) => {
     const score = player.scores[holeNum];
@@ -324,7 +398,8 @@ export function calculateTotalStableford(
         score.strokes,
         holeData.par,
         player.playingHandicap,
-        holeData.handicap
+        effectiveHcp.get(holeNum) ?? holeData.handicap,
+        totalHoles,
       )
     );
   }, 0);
@@ -394,7 +469,7 @@ export function calculateMatchPlayHoleResult(
   player2: Player,
   holeNumber: number,
   holesData: HoleData[],
-  is9Holes: boolean = false
+  courseLength: "18" | "front9" | "back9" = "18",
 ): number {
   const holeData = holesData.find((h) => h.number === holeNumber);
   if (!holeData) return 0;
@@ -404,8 +479,13 @@ export function calculateMatchPlayHoleResult(
 
   if (!score1 || !score2) return 0;
 
-  // Calculate handicap difference - only the higher handicap player receives strokes
-  // For 9-hole rounds, halve the difference (rounded)
+  const is9Holes = courseLength !== "18";
+  const totalHoles = is9Holes ? 9 : 18;
+  const effectiveHcp = getEffectiveHoleHandicaps(holesData, courseLength);
+  const effectiveHoleHcp = effectiveHcp.get(holeNumber) ?? holeData.handicap;
+
+  // Calculate handicap difference - only the higher handicap player receives strokes.
+  // For 9-hole rounds, halve the difference (rounded).
   let hcpDiff = player2.playingHandicap - player1.playingHandicap;
   if (is9Holes) {
     hcpDiff = Math.round(hcpDiff / 2);
@@ -415,12 +495,10 @@ export function calculateMatchPlayHoleResult(
   let net2: number;
 
   if (hcpDiff >= 0) {
-    // Player 2 has higher handicap (or equal), player 1 plays scratch
     net1 = score1.strokes;
-    net2 = calculateNetScore(score2.strokes, hcpDiff, holeData.handicap);
+    net2 = calculateNetScore(score2.strokes, hcpDiff, effectiveHoleHcp, totalHoles);
   } else {
-    // Player 1 has higher handicap, player 2 plays scratch
-    net1 = calculateNetScore(score1.strokes, -hcpDiff, holeData.handicap);
+    net1 = calculateNetScore(score1.strokes, -hcpDiff, effectiveHoleHcp, totalHoles);
     net2 = score2.strokes;
   }
 
@@ -438,10 +516,10 @@ export function calculateMatchPlayScore(
   player2: Player,
   completedHoles: number[],
   holesData: HoleData[],
-  is9Holes: boolean = false
+  courseLength: "18" | "front9" | "back9" = "18",
 ): number {
   return completedHoles.reduce((score, holeNum) => {
-    return score + calculateMatchPlayHoleResult(player1, player2, holeNum, holesData, is9Holes);
+    return score + calculateMatchPlayHoleResult(player1, player2, holeNum, holesData, courseLength);
   }, 0);
 }
 

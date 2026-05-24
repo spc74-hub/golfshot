@@ -29,22 +29,24 @@ import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useState, useMemo } from "react";
 import type { Round, HoleData, Course, Player } from "@/types";
-import { calculatePlayingHandicap } from "@/lib/calculations";
+import { calculatePlayingHandicap, getParForLength, getEffectiveHoleHandicaps } from "@/lib/calculations";
 
-// Calculate Stableford points for a hole
+// Calculate Stableford points for a hole.
+// `holeHandicap` should be the effective hole handicap (1..18 for full rounds,
+// 1..9 for front9/back9 — renumbered by relative difficulty).
 function calculateStablefordPoints(
   strokes: number,
   par: number,
   playingHandicap: number,
-  holeHandicap: number
+  holeHandicap: number,
+  totalHoles: number = 18,
 ): number {
   if (strokes <= 0) return 0;
 
-  // Calculate strokes received on this hole
   let strokesReceived = 0;
   if (playingHandicap > 0) {
-    const baseStrokes = Math.floor(playingHandicap / 18);
-    const remainder = playingHandicap % 18;
+    const baseStrokes = Math.floor(playingHandicap / totalHoles);
+    const remainder = playingHandicap % totalHoles;
     strokesReceived = baseStrokes + (holeHandicap <= remainder ? 1 : 0);
   }
 
@@ -59,26 +61,24 @@ function calculateStablefordPoints(
   return 0; // Double bogey or worse
 }
 
-// Helper to recalculate HDJ if stored as 0 (legacy rounds)
-function recalculateHDJ(player: Player, course: Course, handicapPercentage: number = 100): number {
+// Helper to recalculate HDJ if stored as 0 (legacy rounds) using WHS when possible.
+function recalculateHDJ(player: Player, course: Course, courseLength: Round["courseLength"]): number {
   if (player.playingHandicap !== 0) return player.playingHandicap;
-  // Find the tee slope for this player
   const tee = course.tees?.find((t) => t.name === player.teeBox);
   if (!tee) return player.playingHandicap;
-  // Recalculate using the stored handicap index and tee slope
-  return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, handicapPercentage);
+  const parPlayed = getParForLength(course.holesData, courseLength);
+  const holesPlayed = courseLength === "18" ? 18 : 9;
+  return calculatePlayingHandicap(player.odHandicapIndex, tee.slope, tee.rating, parPlayed, holesPlayed);
 }
 
 // Get the effective handicap for a player (when useHandicap is false, all use first player's handicap)
 function getEffectiveHandicap(player: Player, round: Round, course: Course): number {
-  // When useHandicap is false, everyone uses the first player's handicap
   if (!round.useHandicap) {
     const firstPlayer = round.players[0];
     if (!firstPlayer) return 0;
-    // Recalculate if stored as 0 (legacy rounds created before fix)
-    return recalculateHDJ(firstPlayer, course, round.handicapPercentage);
+    return recalculateHDJ(firstPlayer, course, round.courseLength);
   }
-  return recalculateHDJ(player, course, round.handicapPercentage);
+  return recalculateHDJ(player, course, round.courseLength);
 }
 
 interface MonthStats {
@@ -150,6 +150,8 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
 
     // Get effective handicap (handles legacy rounds and "común" mode)
     const effectiveHandicap = getEffectiveHandicap(player, round, course);
+    const roundTotalHoles = round.courseLength === "18" ? 18 : 9;
+    const effectiveHoleHcpMap = getEffectiveHoleHandicaps(course.holesData, round.courseLength);
 
     let roundStrokes = 0;
     let roundPutts = 0;
@@ -195,8 +197,14 @@ function calculateMonthStats(rounds: Round[], courses: Course[]): MonthStats {
         if (strokesToGreen <= targetStrokes) girHit++;
       }
 
-      // Stableford (use effective handicap)
-      const points = calculateStablefordPoints(strokes, par, effectiveHandicap, hcpIndex);
+      // Stableford (use effective handicap + WHS-correct hole hcp / totalHoles)
+      const points = calculateStablefordPoints(
+        strokes,
+        par,
+        effectiveHandicap,
+        effectiveHoleHcpMap.get(holeNum) ?? hcpIndex,
+        roundTotalHoles,
+      );
       roundStableford += points;
     }
 
@@ -294,6 +302,8 @@ function calculateRoundSummary(
 
   // Get effective handicap (handles legacy rounds and "común" mode)
   const effectiveHandicap = getEffectiveHandicap(player, round, course);
+  const summaryTotalHoles = round.courseLength === "18" ? 18 : 9;
+  const summaryEffectiveHoleHcpMap = getEffectiveHoleHandicaps(course.holesData, round.courseLength);
 
   let totalStrokes = 0;
   let totalStableford = 0;
@@ -335,12 +345,13 @@ function calculateRoundSummary(
     else if (grossDiff === 2) doubleBogeys++;
     else tripleOrWorse++;
 
-    // Stableford (use effective handicap)
+    // Stableford (use effective handicap + WHS-correct hole hcp / totalHoles)
     const points = calculateStablefordPoints(
       strokes,
       holeData.par,
       effectiveHandicap,
-      holeData.handicap
+      summaryEffectiveHoleHcpMap.get(holeNum) ?? holeData.handicap,
+      summaryTotalHoles,
     );
     totalStableford += points;
   }
