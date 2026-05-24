@@ -52,7 +52,7 @@ La pantalla principal muestra:
 - Opción de buscar campos en la API externa
 
 ### Paso 2: Configurar Partida
-- **Fecha**: fecha de la partida (por defecto hoy)
+- **Fecha**: fecha de la partida (por defecto hoy, editable para registrar partidas pasadas — no se permiten fechas futuras)
 - **Hoyos**: 18 hoyos, Primeros 9 (front9) o Últimos 9 (back9)
 - **Modalidad de juego**:
   - **Stableford**: puntuación por puntos Stableford con handicap

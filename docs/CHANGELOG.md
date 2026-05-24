@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-05-24
+- **feat:** Selector de fecha en "Nueva Partida" — por defecto hoy, pero editable para registrar partidas pasadas. No permite fechas futuras
 - **feat:** HDJ ahora usa la fórmula oficial WHS `HI × Slope/113 + (Rating − Par)` — antes solo aplicaba `HI × Slope/113` (sin el ajuste por Rating-Par), lo que daba diferencias de ±1‑2 golpes respecto al cálculo de la RFEG
 - **feat:** HDJ correcto para partidas de 9 hoyos — antes se usaba el HDJ de 18 hoyos completos, ahora se aplica la fórmula `(HI/2) × Slope/113 + (Rating/2 − Par_9)` y los golpes se distribuyen sobre 9 (no 18)
 - **feat:** Distribución de strokes-received en 9 hoyos correcta — los handicaps de los 9 hoyos jugados se renumeran 1..9 por dificultad relativa para que los golpes recaigan en los hoyos más duros del recorrido jugado

@@ -107,6 +107,7 @@ export function RoundSetup() {
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
   const [gameMode, setGameMode] = useState<GameMode>("stableford");
   const [courseLength, setCourseLength] = useState<CourseLength>("18");
+  const [roundDate, setRoundDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
   const [useHandicap, setUseHandicap] = useState(true);
   const [handicapPercentage, setHandicapPercentage] = useState<100 | 75>(100);
   const [teamMode, setTeamMode] = useState<TeamMode>("bestBall");
@@ -562,7 +563,7 @@ export function RoundSetup() {
       const roundData = {
         course_id: selectedCourse.id,
         course_name: selectedCourse.name,
-        round_date: new Date().toISOString().split("T")[0],
+        round_date: roundDate,
         course_length: courseLength,
         game_mode: gameMode,
         use_handicap: useHandicap,
@@ -814,6 +815,20 @@ export function RoundSetup() {
           {selectedCourse && (
             <>
               <Separator />
+              <div className="space-y-2">
+                <Label htmlFor="round-date">Fecha de la partida</Label>
+                <Input
+                  id="round-date"
+                  type="date"
+                  value={roundDate}
+                  max={new Date().toISOString().split("T")[0]}
+                  onChange={(e) => setRoundDate(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Por defecto hoy. Cámbiala si vas a registrar una partida anterior.
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label>Recorrido</Label>
                 <Select
