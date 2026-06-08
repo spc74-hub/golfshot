@@ -470,6 +470,19 @@ export function RoundCard() {
           parPlayed: front9Totals.parPlayed + back9Totals.parPlayed,
         };
 
+        // Running cumulative Stableford net score, keyed by hole number.
+        // Holes are visited in play order (front9 then back9) so the back9
+        // values continue from the OUT total.
+        const cumulativeNetByHole = new Map<number, number>();
+        {
+          let running = 0;
+          for (const h of holes) {
+            const pts = getStablefordPoints(player, h);
+            if (pts !== null) running += pts;
+            cumulativeNetByHole.set(h, running);
+          }
+        }
+
         // Calculate differences vs objectives (based on holes actually played, not total course)
         const strokesDiff = totalTotals.strokes - totalTotals.parPlayed;
         const puttsDiff = totalTotals.putts - (totalTotals.holesPlayed * 2);
@@ -661,6 +674,48 @@ export function RoundCard() {
                             </td>
                           </tr>
                         )}
+                        {/* Net Score (Stableford by hole) */}
+                        <tr className="border-b">
+                          <td className="p-1 font-medium">Net</td>
+                          {front9.map(h => {
+                            const pts = getStablefordPoints(player, h);
+                            const isCompleted = round.completedHoles?.includes(h);
+                            return (
+                              <td
+                                key={h}
+                                className={`p-1 text-center ${
+                                  isCompleted ? "" : "text-muted-foreground/50"
+                                }`}
+                              >
+                                {pts ?? "-"}
+                              </td>
+                            );
+                          })}
+                          <td className="p-1 text-center font-bold bg-muted/50">
+                            {front9Totals.stablefordPoints || "-"}
+                          </td>
+                        </tr>
+                        {/* Round Score (cumulative Stableford) */}
+                        <tr className="border-b">
+                          <td className="p-1 font-medium">Round</td>
+                          {front9.map(h => {
+                            const isCompleted = round.completedHoles?.includes(h);
+                            const cum = cumulativeNetByHole.get(h);
+                            return (
+                              <td
+                                key={h}
+                                className={`p-1 text-center ${
+                                  isCompleted ? "" : "text-muted-foreground/50"
+                                }`}
+                              >
+                                {cum ?? "-"}
+                              </td>
+                            );
+                          })}
+                          <td className="p-1 text-center font-bold bg-muted/50">
+                            {front9Totals.stablefordPoints || "-"}
+                          </td>
+                        </tr>
                       </tbody>
                     </>
                   )}
@@ -815,6 +870,54 @@ export function RoundCard() {
                             </td>
                           </tr>
                         )}
+                        {/* Net Score (Stableford by hole) */}
+                        <tr className="border-b">
+                          <td className="p-1 font-medium">Net</td>
+                          {back9.map(h => {
+                            const pts = getStablefordPoints(player, h);
+                            const isCompleted = round.completedHoles?.includes(h);
+                            return (
+                              <td
+                                key={h}
+                                className={`p-1 text-center ${
+                                  isCompleted ? "" : "text-muted-foreground/50"
+                                }`}
+                              >
+                                {pts ?? "-"}
+                              </td>
+                            );
+                          })}
+                          <td className="p-1 text-center font-bold bg-muted/50">
+                            {back9Totals.stablefordPoints || "-"}
+                          </td>
+                          <td className="p-1 text-center font-bold bg-primary/10">
+                            {totalTotals.stablefordPoints || "-"}
+                          </td>
+                        </tr>
+                        {/* Round Score (cumulative Stableford) */}
+                        <tr className="border-b">
+                          <td className="p-1 font-medium">Round</td>
+                          {back9.map(h => {
+                            const isCompleted = round.completedHoles?.includes(h);
+                            const cum = cumulativeNetByHole.get(h);
+                            return (
+                              <td
+                                key={h}
+                                className={`p-1 text-center ${
+                                  isCompleted ? "" : "text-muted-foreground/50"
+                                }`}
+                              >
+                                {cum ?? "-"}
+                              </td>
+                            );
+                          })}
+                          <td className="p-1 text-center font-bold bg-muted/50">
+                            {totalTotals.stablefordPoints || "-"}
+                          </td>
+                          <td className="p-1 text-center font-bold bg-primary/10">
+                            {totalTotals.stablefordPoints || "-"}
+                          </td>
+                        </tr>
                       </tbody>
                     </>
                   )}
