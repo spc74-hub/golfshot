@@ -217,7 +217,12 @@ golfshot-migration/
   - `golfshot-frontend`: Node 20 build → nginx (puerto 80)
   - `spcapps-postgres`: PostgreSQL 16 compartido (red `spcapps-network`)
 - **API URL**: `https://golfshot.spcapps.com/api` (proxy nginx)
-- **Auto-deploy**: webhook en GitHub → pull + build + restart
+- **Deploy (CI) — ⚠️ NO se construye en el VPS**: `git push` a main → GitHub Actions
+  (`.github/workflows/build-and-push.yml`) construye `ghcr.io/spc74-hub/golfshot-{backend,frontend}`
+  → GHCR → un webhook dispara `docker compose pull && up -d` en el VPS. NO hagas build ni
+  `git pull` de código en el VPS (corre desde la imagen de GHCR). Los `.md`/docs no disparan el
+  pipeline. Compose de prod en `spcapps-infra/projects/golfshot/` (NO el de este repo).
+  Frontend Vite hornea `VITE_API_URL=https://golfshot.spcapps.com/api`. Canónico: `spcapps-infra/docs/DEPLOY-MODEL.md`.
 - **Infra**: repo `spc74-hub/spcapps-infra`, path `/opt/spcapps-infra/projects/golfshot/`
 
 ## Key Files
