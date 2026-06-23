@@ -1,13 +1,29 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+import httpx
+from fastapi import APIRouter, HTTPException, status, Depends, Request
+from jose import jwt as cf_jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.schemas import LoginRequest, RegisterRequest, UserResponse
 from app.models.db_models import Profile
 from app.database import get_db
 from app.auth import verify_password, get_password_hash, create_access_token
+from app.config import get_settings
 from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Cached Cloudflare Access public keys (JWKS).
+_cf_jwks: dict | None = None
+
+
+async def _cloudflare_jwks(settings) -> dict:
+    global _cf_jwks
+    if _cf_jwks is None:
+        async with httpx.AsyncClient(timeout=5) as client:
+            res = await client.get(f"{settings.cf_access_team_domain}/cdn-cgi/access/certs")
+            res.raise_for_status()
+            _cf_jwks = res.json()
+    return _cf_jwks
 
 
 @router.post("/register")
@@ -100,6 +116,49 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
         )
+
+
+@router.post("/cf-access")
+async def cf_access_login(request: Request, db: AsyncSession = Depends(get_db)):
+    """Auto-login from a Cloudflare Access identity (no password).
+
+    Only works behind Cloudflare Access: validates the signed assertion that
+    Cloudflare injects (Cf-Access-Jwt-Assertion) against the team's public keys
+    and checks the `aud` matches this app — so it can't be forged by a client.
+    """
+    settings = get_settings()
+    if not settings.cf_access_aud:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Cloudflare Access login not configured")
+
+    assertion = request.headers.get("Cf-Access-Jwt-Assertion")
+    if not assertion:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No Cloudflare Access assertion present")
+
+    try:
+        jwks = await _cloudflare_jwks(settings)
+        claims = cf_jwt.decode(
+            assertion,
+            jwks,
+            algorithms=["RS256"],
+            audience=settings.cf_access_aud,
+            issuer=settings.cf_access_team_domain,
+        )
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Cloudflare Access assertion")
+
+    email = claims.get("email")
+    if not email:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Cloudflare Access assertion has no email")
+
+    result = await db.execute(select(Profile).where(Profile.email == email))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No account for this identity")
+    if profile.status in ("disabled", "blocked"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is disabled")
+
+    access_token = create_access_token(data={"sub": profile.id})
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/logout")

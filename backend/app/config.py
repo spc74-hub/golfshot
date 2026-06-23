@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5174,http://localhost:5173,http://localhost:3000"
     frontend_url: str = ""
 
+    # Cloudflare Access auto-login (Option B). When cf_access_aud is set, the
+    # /auth/cf-access endpoint trades a verified CF Access identity for an app JWT
+    # (no password). AUD comes from the Cloudflare app's "AUD tag".
+    cf_access_team_domain: str = "https://spcapps.cloudflareaccess.com"
+    cf_access_aud: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=Path(__file__).parent.parent / ".env",
         env_file_encoding="utf-8",

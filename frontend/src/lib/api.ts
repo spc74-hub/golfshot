@@ -149,6 +149,13 @@ export const authApi = {
     });
   },
 
+  // Auto-login from a Cloudflare Access identity (no password). Works only when
+  // behind Cloudflare Access: CF injects the signed assertion and the backend
+  // validates it. Returns { access_token } on success.
+  cfAccess: async (): Promise<{ access_token?: string }> => {
+    return fetchWithAuth("/auth/cf-access", { method: "POST" });
+  },
+
   register: async (email: string, password: string, displayName?: string) => {
     return fetchWithAuth("/auth/register", {
       method: "POST",

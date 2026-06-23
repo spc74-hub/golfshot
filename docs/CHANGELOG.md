@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-23 — Auto-login con Cloudflare Access (sin segundo login)
+- **feat(auth):** nuevo endpoint `POST /auth/cf-access` que canjea una identidad ya validada por **Cloudflare Access** por un JWT de GolfShot, **sin contraseña**. Valida el JWT firmado `Cf-Access-Jwt-Assertion` contra las claves del equipo (`spcapps.cloudflareaccess.com`, JWKS cacheado) y comprueba el `aud` de esta app (`cf_access_aud`). GolfShot va entera tras Access (sin bypass).
+- **feat(frontend):** el `AuthContext` intenta el auto-login de Cloudflare al cargar si no hay token; si Access ya te autenticó, entras directo (sin el segundo login). Si no, cae al login normal.
+- **chore:** nueva config `cf_access_team_domain` / `cf_access_aud` (esta última por env en el VPS).
+
 ## 2026-05-24
 - **feat:** Tarjeta de partida muestra ahora dos filas adicionales: **Net** (puntos Stableford netos por hoyo) y **Round** (acumulado de Stableford), tanto en front 9 como back 9
 - **feat:** Selector de fecha en "Nueva Partida" — por defecto hoy, pero editable para registrar partidas pasadas. No permite fechas futuras

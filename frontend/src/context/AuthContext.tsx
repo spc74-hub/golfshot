@@ -25,9 +25,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) {
       fetchUserProfile();
     } else {
-      setLoading(false);
+      // No token: try Cloudflare Access auto-login before showing the login page.
+      // If we're behind Access, this returns a token (no password) and logs us in.
+      tryCloudflareAccessLogin();
     }
   }, []);
+
+  async function tryCloudflareAccessLogin() {
+    try {
+      const data = await authApi.cfAccess();
+      if (data?.access_token) {
+        localStorage.setItem("access_token", data.access_token);
+        await fetchUserProfile();
+        return;
+      }
+    } catch {
+      // Not behind Access (or no account) — fall through to the normal login.
+    }
+    setLoading(false);
+  }
 
   async function fetchUserProfile() {
     try {
