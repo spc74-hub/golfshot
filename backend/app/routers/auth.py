@@ -1,4 +1,5 @@
 import httpx
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from jose import jwt as cf_jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,17 +13,31 @@ from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Cached Cloudflare Access public keys (JWKS).
+# ⚠️ Cloudflare ROTA estas claves. Cachearlas para siempre significa que, el día
+# que rota, la verificación falla y el auto-login deja de funcionar sin que nadie
+# haya tocado nada: pasas el OTP y la app te pide usuario y contraseña. Ocurrió el
+# 2026-08-12 en nueve apps a la vez. Por eso la caché caduca, y ante un fallo de
+# verificación se recarga y se reintenta UNA vez (así una rotación se absorbe al
+# instante). Ver spcapps-infra/docs/PATTERNS.md → "El JWKS tiene que caducar".
+_CF_JWKS_TTL = timedelta(hours=1)
 _cf_jwks: dict | None = None
+_cf_jwks_at: datetime | None = None
 
 
-async def _cloudflare_jwks(settings) -> dict:
-    global _cf_jwks
-    if _cf_jwks is None:
-        async with httpx.AsyncClient(timeout=5) as client:
-            res = await client.get(f"{settings.cf_access_team_domain}/cdn-cgi/access/certs")
-            res.raise_for_status()
-            _cf_jwks = res.json()
+async def _cloudflare_jwks(settings, force: bool = False) -> dict:
+    global _cf_jwks, _cf_jwks_at
+    fresco = (
+        _cf_jwks is not None
+        and _cf_jwks_at is not None
+        and datetime.now(timezone.utc) - _cf_jwks_at < _CF_JWKS_TTL
+    )
+    if fresco and not force:
+        return _cf_jwks
+    async with httpx.AsyncClient(timeout=5) as client:
+        res = await client.get(f"{settings.cf_access_team_domain}/cdn-cgi/access/certs")
+        res.raise_for_status()
+        _cf_jwks = res.json()
+    _cf_jwks_at = datetime.now(timezone.utc)
     return _cf_jwks
 
 
@@ -134,15 +149,22 @@ async def cf_access_login(request: Request, db: AsyncSession = Depends(get_db)):
     if not assertion:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No Cloudflare Access assertion present")
 
-    try:
-        jwks = await _cloudflare_jwks(settings)
-        claims = cf_jwt.decode(
+    def _decode(jwks):
+        return cf_jwt.decode(
             assertion,
             jwks,
             algorithms=["RS256"],
             audience=settings.cf_access_aud,
             issuer=settings.cf_access_team_domain,
         )
+
+    try:
+        try:
+            claims = _decode(await _cloudflare_jwks(settings))
+        except Exception:
+            # Puede ser un assertion inválido, o que Cloudflare acabe de rotar sus
+            # claves. Se reintenta una vez con el JWKS recién descargado.
+            claims = _decode(await _cloudflare_jwks(settings, force=True))
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Cloudflare Access assertion")
 

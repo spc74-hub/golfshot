@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-08-12 — El JWKS de Cloudflare ya no se cachea para siempre
+- **fix(auth):** las claves públicas de Cloudflare se descargaban una vez al arrancar el proceso y no se refrescaban nunca. Cloudflare **las rota**, y al rotar el auto-login dejaba de funcionar sin que nadie tocara nada: pasabas el OTP y GolfShot te pedía usuario y contraseña. El 2026-08-12 les pasó a nueve apps **el mismo día**, lo que despistaba mucho porque parecía caché del móvil. Ahora la caché caduca a la hora y, ante un fallo de verificación, se reintenta **una vez** con las claves recién descargadas — así una rotación se absorbe al instante. Un assertion realmente inválido sigue fallando las dos veces y devuelve 401. Arreglado desde el chat de infra por ser el mismo defecto en toda la flota; contexto en `spcapps-infra/docs/PATTERNS.md` → "El JWKS tiene que caducar".
+
 ## 2026-06-23 — Auto-login con Cloudflare Access (sin segundo login)
 - **feat(auth):** nuevo endpoint `POST /auth/cf-access` que canjea una identidad ya validada por **Cloudflare Access** por un JWT de GolfShot, **sin contraseña**. Valida el JWT firmado `Cf-Access-Jwt-Assertion` contra las claves del equipo (`spcapps.cloudflareaccess.com`, JWKS cacheado) y comprueba el `aud` de esta app (`cf_access_aud`). GolfShot va entera tras Access (sin bypass).
 - **feat(frontend):** el `AuthContext` intenta el auto-login de Cloudflare al cargar si no hay token; si Access ya te autenticó, entras directo (sin el segundo login). Si no, cae al login normal.

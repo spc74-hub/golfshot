@@ -1,6 +1,8 @@
 # GolfShot — Backlog
 
 ## Prioridad Alta
+- [ ] **Rama `wip/sync-linked-player-handicap`** — mantiene sincronizado el hándicap del jugador guardado vinculado cuando das de alta, editas o borras una entrada del histórico. Llevaba desde el 15/06 sin commitear en el portátil; se subió a una rama el 12/08 para no perderla. **Sin mergear a propósito: escribe en datos reales (`SavedPlayer.handicap_index`) y no se ha ejecutado desde que se escribió.** Probarlo con jugadores reales antes de mergear. Incluye `scripts/add_margas_course.py` (alta del campo de Las Margas)
+- [ ] **Registro abierto** — cualquiera con acceso al dominio puede crear cuenta; cerrar o restringir por invitación *(punto 2.3 del backlog de infra)*
 - [ ] **Panel Admin** — Implementar dashboard de administración (actualmente placeholder). Incluir gestión de campos y estadísticas de uso
 - [ ] **Tests backend** — Añadir tests unitarios y de integración para endpoints críticos (rounds, stats, OCR)
 - [ ] **Tests frontend** — Añadir tests de componentes principales (RoundPlay, RoundSetup, Stats)
