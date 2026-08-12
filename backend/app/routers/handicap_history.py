@@ -4,7 +4,11 @@ from sqlalchemy import select
 from app.models.schemas import (
     HandicapHistoryCreate, HandicapHistoryUpdate, HandicapHistoryResponse, UserResponse,
 )
-from app.models.db_models import HandicapHistory as HandicapHistoryModel
+from app.models.db_models import (
+    HandicapHistory as HandicapHistoryModel,
+    Profile as ProfileModel,
+    SavedPlayer as SavedPlayerModel,
+)
 from app.database import get_db
 from app.dependencies import get_current_user
 from typing import Optional
@@ -21,6 +25,36 @@ def model_to_dict(h: HandicapHistoryModel) -> dict:
         "notes": h.notes,
         "created_at": h.created_at.isoformat() if h.created_at else None,
     }
+
+
+async def sync_linked_player_handicap(db: AsyncSession, user_id: str) -> None:
+    """Keep the user's linked saved player in sync with their current handicap.
+
+    The "current" handicap is the most recent entry by effective_date. If the
+    user has a linked saved player (Profile.linked_player_id), its
+    handicap_index is updated to match. No-op if there is no linked player or
+    no handicap history entries. Caller is responsible for committing.
+    """
+    profile = (await db.execute(
+        select(ProfileModel).where(ProfileModel.id == user_id)
+    )).scalar_one_or_none()
+    if not profile or not profile.linked_player_id:
+        return
+
+    current = (await db.execute(
+        select(HandicapHistoryModel)
+        .where(HandicapHistoryModel.user_id == user_id)
+        .order_by(HandicapHistoryModel.effective_date.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    if current is None:
+        return
+
+    player = (await db.execute(
+        select(SavedPlayerModel).where(SavedPlayerModel.id == profile.linked_player_id)
+    )).scalar_one_or_none()
+    if player and player.handicap_index != current.handicap_index:
+        player.handicap_index = current.handicap_index
 
 
 @router.get("/", response_model=list[HandicapHistoryResponse])
@@ -96,6 +130,8 @@ async def create_handicap_entry(
             notes=entry.notes,
         )
         db.add(db_entry)
+        await db.flush()
+        await sync_linked_player_handicap(db, current_user.id)
         await db.commit()
         await db.refresh(db_entry)
         return model_to_dict(db_entry)
@@ -128,6 +164,8 @@ async def update_handicap_entry(
     for key, value in update_data.items():
         setattr(existing, key, value)
 
+    await db.flush()
+    await sync_linked_player_handicap(db, current_user.id)
     await db.commit()
     await db.refresh(existing)
     return model_to_dict(existing)
@@ -150,5 +188,7 @@ async def delete_handicap_entry(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     await db.delete(existing)
+    await db.flush()
+    await sync_linked_player_handicap(db, current_user.id)
     await db.commit()
     return {"message": "Handicap entry deleted successfully"}
