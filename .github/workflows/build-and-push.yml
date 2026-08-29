@@ -53,7 +53,11 @@ jobs:
     steps:
       - name: Trigger deploy on VPS (webhook → pull + up)
         run: |
-          curl -fsS -X POST https://webhook.spcapps.com/ci-deploy \
+          # --retry: si el aviso al webhook se pierde por un parpadeo de red, el job
+          # sale en ROJO con la imagen ya construida y subida — y el deploy no llega a
+          # empezar. Pasó con luuktrainer el 2026-08-29. --retry-all-errors es
+          # necesario: sin él, curl solo reintenta errores de transporte, no un 5xx.
+          curl -fsS --retry 3 --retry-delay 5 --retry-all-errors -X POST https://webhook.spcapps.com/ci-deploy \
             -H "X-Deploy-Token: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"app":"golfshot"}'
