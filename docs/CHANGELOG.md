@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-08-29
+- **fix(pwa):** el icono no aparecia al añadir la app a la pantalla de inicio **en iPad** (en iPhone si). Solo se declaraba `apple-touch-icon` de 180x180: el iPhone encuentra su tamaño exacto, pero el iPad busca 152x152 (retina) o 167x167 (Pro) y no habia ninguno, ni el fallback `/apple-touch-icon.png` en la raiz. Sin candidato valido, Safari pone una captura de la pagina. Añadidos los dos tamaños que faltaban y el fallback de raiz.
+
 ## 2026-08-12 — El JWKS de Cloudflare ya no se cachea para siempre
 - **fix(auth):** las claves públicas de Cloudflare se descargaban una vez al arrancar el proceso y no se refrescaban nunca. Cloudflare **las rota**, y al rotar el auto-login dejaba de funcionar sin que nadie tocara nada: pasabas el OTP y GolfShot te pedía usuario y contraseña. El 2026-08-12 les pasó a nueve apps **el mismo día**, lo que despistaba mucho porque parecía caché del móvil. Ahora la caché caduca a la hora y, ante un fallo de verificación, se reintenta **una vez** con las claves recién descargadas — así una rotación se absorbe al instante. Un assertion realmente inválido sigue fallando las dos veces y devuelve 401. Arreglado desde el chat de infra por ser el mismo defecto en toda la flota; contexto en `spcapps-infra/docs/PATTERNS.md` → "El JWKS tiene que caducar".
 
