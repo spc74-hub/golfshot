@@ -73,6 +73,12 @@ La pantalla principal muestra:
 - El HDJ (Handicap de Juego) se calcula automáticamente: `HDJ = (HI × slope del tee) / 113`
 - En modo 75%, se calcula la diferencia: el jugador con menor HDJ juega a 0, los demás reciben el 75% de la diferencia
 
+**Guardar un jugador nuevo en "Mis jugadores"**
+- Debajo de cada jugador que no esté en tu lista aparece el botón **"Guardar en mis jugadores"**.
+- ⚠️ Guarda el nombre, el índice de handicap y el tee **tal y como estén en ese momento**: rellena primero todos los datos y guarda al final. Si cambias el handicap después de pulsarlo, ese cambio se queda solo en la partida y no actualiza el jugador guardado.
+- Cuando el jugador está en tu lista se muestra "Guardado en mis jugadores" con un check. Si el guardado falla, se muestra el motivo.
+- Para corregir un jugador ya guardado, hazlo desde la pantalla **Jugadores**.
+
 ### Paso 4: Usar Plantilla (opcional)
 - Si seleccionas una plantilla, se pre-rellenan campo, modalidad, jugadores y configuración
 - Puedes modificar cualquier valor antes de empezar
@@ -101,6 +107,12 @@ La pantalla principal muestra:
   - 🟢 Bogey
   - ⚪ Doble bogey
   - ⚫ Triple bogey o peor
+
+### Bloqueo y reapertura de un hoyo
+- Al pulsar **💾 Guardar Hoyo** el hoyo queda grabado y **bloqueado**: los golpes y los putts pasan a solo lectura y el estado muestra "Hoyo guardado (bloqueado)" con un candado.
+- Así no se cambian resultados sin querer al volver a pasar por un hoyo ya jugado.
+- Para corregirlo, pulsa **Reabrir hoyo**: los campos vuelven a ser editables y, al modificarlos, reaparece el botón de guardar.
+- El hoyo se vuelve a bloquear al guardarlo de nuevo o al cambiar de hoyo.
 
 ### Indicador GIR
 - Se muestra si el jugador alcanzó el green en regulación (golpes al green ≤ par - 2)

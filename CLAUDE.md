@@ -39,6 +39,7 @@ golfshot-migration/
 - Indicador GIR (Green in Regulation) por hoyo
 - Handicap Virtual (HV) por partida: `HV = HI - (Stableford - 36)`
 - Partidas compartidas con código de 6 caracteres (colaboradores pueden editar scores)
+- Hoyos guardados quedan bloqueados (solo lectura) con opción "Reabrir hoyo" para corregirlos
 - Marcar partidas como finalizadas
 
 ### Importación OCR

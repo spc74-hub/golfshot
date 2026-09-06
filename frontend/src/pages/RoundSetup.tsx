@@ -117,6 +117,8 @@ export function RoundSetup() {
     DEFAULT_SINDICATO_POINTS
   );
   const [players, setPlayers] = useState<PlayerForm[]>([]);
+  // Per-player error when saving to "Mis jugadores" (keyed by tempId)
+  const [playerSaveError, setPlayerSaveError] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [templateApplied, setTemplateApplied] = useState(false);
   const [appliedTemplateForPlayers, setAppliedTemplateForPlayers] = useState<typeof selectedTemplate>(undefined);
@@ -503,6 +505,11 @@ export function RoundSetup() {
   // Save player to "Mis jugadores"
   const savePlayerToList = async (player: PlayerForm) => {
     if (!player.name.trim()) return;
+    setPlayerSaveError((prev) => {
+      const next = { ...prev };
+      delete next[player.tempId];
+      return next;
+    });
     try {
       await createPlayer.mutateAsync({
         name: player.name.trim(),
@@ -511,6 +518,11 @@ export function RoundSetup() {
       });
     } catch (error) {
       console.error("Error saving player:", error);
+      setPlayerSaveError((prev) => ({
+        ...prev,
+        [player.tempId]:
+          error instanceof Error ? error.message : "No se pudo guardar el jugador",
+      }));
     }
   };
 
@@ -1195,6 +1207,21 @@ export function RoundSetup() {
                       )}
                       Guardar en mis jugadores
                     </Button>
+                  )}
+
+                  {/* Save failed - the error used to go only to the console */}
+                  {playerSaveError[player.tempId] && (
+                    <p className="text-xs text-destructive mt-2 text-center">
+                      No se pudo guardar: {playerSaveError[player.tempId]}
+                    </p>
+                  )}
+
+                  {/* Confirmation that the player is in "Mis jugadores" */}
+                  {savedPlayers && isPlayerSaved(player) && player.name.trim() && (
+                    <p className="text-xs text-green-600 mt-2 flex items-center justify-center gap-1">
+                      <Check className="h-3 w-3" />
+                      Guardado en mis jugadores
+                    </p>
                   )}
                 </div>
               ))}

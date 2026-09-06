@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-06
+- **fix(partidas):** "Guardar en mis jugadores" no daba **ninguna señal** de haber guardado (el botón solo desaparecía) y, si la llamada fallaba, el error iba solo a la consola. Ahora se muestra "Guardado en mis jugadores" con un check cuando el jugador está en la lista, y el motivo del error si falla. Esto hacía creer que no se guardaba nada: en realidad se guardaba, pero con los valores que hubiera en ese momento en el formulario — si luego cambiabas handicap o nombre, esos cambios no llegaban al jugador guardado.
+- **feat(rondas):** un hoyo ya grabado queda **bloqueado** (golpes y putts en solo lectura) para no tocarlo sin querer al pasar por él. El estado pasa a mostrar "Hoyo guardado (bloqueado)" con candado y aparece un botón **Reabrir hoyo** que desbloquea la edición; al volver a guardar se bloquea de nuevo, igual que al cambiar de hoyo.
+
 ## 2026-08-29
 - **fix(pwa):** el icono no aparecia al añadir la app a la pantalla de inicio **en iPad** (en iPhone si). Solo se declaraba `apple-touch-icon` de 180x180: el iPhone encuentra su tamaño exacto, pero el iPad busca 152x152 (retina) o 167x167 (Pro) y no habia ninguno, ni el fallback `/apple-touch-icon.png` en la raiz. Sin candidato valido, Safari pone una captura de la pagina. Añadidos los dos tamaños que faltaban y el fallback de raiz.
 

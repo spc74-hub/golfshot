@@ -35,7 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LogOut, Trash2, Save, ClipboardList, Share2, Copy, Check, Users } from "lucide-react";
+import { LogOut, Trash2, Save, ClipboardList, Share2, Copy, Check, Users, Lock, Unlock } from "lucide-react";
 import type { Player, HoleData, Score } from "@/types";
 import { SCORE_COLORS, DEFAULT_PUTTS } from "@/types";
 
@@ -69,6 +69,8 @@ export function RoundPlay() {
   const [playerScores, setPlayerScores] = useState<Record<string, Score>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isHoleSaved, setIsHoleSaved] = useState(true);
+  // A hole already saved stays locked until the user explicitly reopens it
+  const [isHoleUnlocked, setIsHoleUnlocked] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showExitDialog, setShowExitDialog] = useState(false);
 
@@ -139,6 +141,7 @@ export function RoundPlay() {
       });
       setPlayerScores(scores);
       setIsHoleSaved(true); // New hole is considered "saved" initially
+      setIsHoleUnlocked(false); // Saved holes start locked
     }
   }, [currentHole, round, currentHoleData?.par]);
 
@@ -192,6 +195,7 @@ export function RoundPlay() {
       });
 
       setIsHoleSaved(true);
+      setIsHoleUnlocked(false);
     } catch (error) {
       console.error("Error saving scores:", error);
       setSaveError("Error al guardar. Por favor, intenta de nuevo.");
@@ -566,6 +570,10 @@ export function RoundPlay() {
     );
   }
 
+  // A hole already recorded is locked (read-only) until the user reopens it
+  const isHoleLocked =
+    isHoleSaved && !isHoleUnlocked && (round.completedHoles?.includes(currentHole) ?? false);
+
   const isFirstHole = holes.indexOf(currentHole) === 0;
   const isLastHole = holes.indexOf(currentHole) === holes.length - 1;
 
@@ -870,6 +878,7 @@ export function RoundPlay() {
                       variant="outline"
                       size="sm"
                       className="h-10 w-10"
+                      disabled={isHoleLocked}
                       onClick={() =>
                         updateStrokes(player.id, (playerScores[player.id]?.strokes || 4) - 1)
                       }
@@ -880,6 +889,7 @@ export function RoundPlay() {
                       type="number"
                       min={1}
                       value={playerScores[player.id]?.strokes || currentHoleData?.par || 4}
+                      disabled={isHoleLocked}
                       onChange={(e) =>
                         updateStrokes(player.id, parseInt(e.target.value) || 1)
                       }
@@ -889,6 +899,7 @@ export function RoundPlay() {
                       variant="outline"
                       size="sm"
                       className="h-10 w-10"
+                      disabled={isHoleLocked}
                       onClick={() =>
                         updateStrokes(player.id, (playerScores[player.id]?.strokes || 4) + 1)
                       }
@@ -906,6 +917,7 @@ export function RoundPlay() {
                       variant="outline"
                       size="sm"
                       className="h-10 w-10"
+                      disabled={isHoleLocked}
                       onClick={() =>
                         updatePutts(player.id, (playerScores[player.id]?.putts ?? DEFAULT_PUTTS) - 1)
                       }
@@ -916,6 +928,7 @@ export function RoundPlay() {
                       type="number"
                       min={0}
                       value={playerScores[player.id]?.putts ?? DEFAULT_PUTTS}
+                      disabled={isHoleLocked}
                       onChange={(e) => {
                         const parsed = parseInt(e.target.value);
                         updatePutts(player.id, isNaN(parsed) ? 0 : parsed);
@@ -926,6 +939,7 @@ export function RoundPlay() {
                       variant="outline"
                       size="sm"
                       className="h-10 w-10"
+                      disabled={isHoleLocked}
                       onClick={() =>
                         updatePutts(player.id, (playerScores[player.id]?.putts ?? DEFAULT_PUTTS) + 1)
                       }
@@ -962,10 +976,14 @@ export function RoundPlay() {
             )}
             {!isSaving && isHoleSaved && !saveError && (
               <span className="text-sm text-green-600 flex items-center gap-1">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Hoyo guardado
+                {isHoleLocked ? (
+                  <Lock className="w-4 h-4" />
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {isHoleLocked ? "Hoyo guardado (bloqueado)" : "Hoyo guardado"}
               </span>
             )}
             {saveError && (
@@ -986,6 +1004,19 @@ export function RoundPlay() {
             >
               ← Anterior
             </Button>
+
+            {/* Reopen button - unlock an already saved hole to edit it */}
+            {isHoleLocked && (
+              <Button
+                variant="outline"
+                className="flex-1"
+                disabled={isSaving}
+                onClick={() => setIsHoleUnlocked(true)}
+              >
+                <Unlock className="h-4 w-4 mr-1" />
+                Reabrir hoyo
+              </Button>
+            )}
 
             {/* Save button - only show if not saved */}
             {!isHoleSaved && (
