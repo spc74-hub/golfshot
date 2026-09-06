@@ -57,7 +57,7 @@ La pantalla principal muestra:
 - **Modalidad de juego**:
   - **Stableford**: puntuación por puntos Stableford con handicap
   - **Stroke Play**: solo golpes brutos
-  - **Sindicato**: competición por puntos entre jugadores (configurable: 4-2-1-0 por defecto)
+  - **Sindicato**: competición por puntos entre jugadores según la posición en cada hoyo, a golpes netos (configurable: **3-2-1-0** por defecto, es decir 3-2-1 con tres jugadores). En caso de empate se suman los puntos de las plazas empatadas y se reparten a partes iguales
   - **Equipos**: dos equipos (A y B) con Best Ball o Good/Bad Ball
   - **Match Play**: enfrentamiento 1v1 hoyo a hoyo
 - **Handicap**: activar/desactivar uso de handicap

@@ -32,6 +32,7 @@ golfshot-migration/
 ### Partidas (Rounds)
 - Crear partidas con 1-4 jugadores
 - Modalidades: Stableford, Stroke Play, Sindicato, Equipos (Best Ball / Good-Bad Ball), Match Play
+- Sindicato: puntos por posición en el hoyo a golpes netos (3-2-1-0 por defecto, configurable; empates reparten la suma de las plazas)
 - Registro hoyo a hoyo de golpes y putts
 - Cálculo automático de HDJ (Handicap de Juego) con fórmula oficial WHS: `HDJ = HI × (Slope/113) + (Rating − Par)` (18 hoyos) o `(HI/2) × (Slope/113) + (Rating/2 − Par_9)` (9 hoyos). Editable manualmente al crear la partida para tees combinados de torneo
 - Handicap al 100% o 75% (diferencia para Match Play)

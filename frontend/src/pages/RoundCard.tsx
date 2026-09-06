@@ -32,7 +32,7 @@ import { ArrowLeft, Play, Flag, RotateCcw } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import type { Player, HoleData } from "@/types";
-import { SCORE_COLORS } from "@/types";
+import { SCORE_COLORS, DEFAULT_SINDICATO_POINTS } from "@/types";
 
 export function RoundCard() {
   const [searchParams] = useSearchParams();
@@ -144,7 +144,7 @@ export function RoundCard() {
         playersWithEffectiveHcp,
         holeNum,
         patchedHolesData,
-        round.sindicatoPoints || [4, 2, 1, 0],
+        round.sindicatoPoints || DEFAULT_SINDICATO_POINTS,
         totalHoles,
       );
       return sindicatoPoints.get(player.id) || 0;

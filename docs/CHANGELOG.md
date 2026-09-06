@@ -1,6 +1,9 @@
 # Changelog
 
 ## 2026-09-06
+- **fix(partidas):** una partida de **9 últimos** abría siempre en el **hoyo 1** — que ni siquiera forma parte de la vuelta — y había que pulsar "Siguiente" para llegar al 10. El backend ya guardaba bien `current_hole = 10`, pero la pantalla de juego arrancaba con un `1` fijo y nunca leía el hoyo guardado de la partida. Ahora empieza en el hoyo que toca (y al retomar una partida, en el hoyo donde la dejaste).
+- **fix(partidas):** los puntos por posición del Sindicato ya no dejan un **0 pegado delante** al borrarlos: el campo puede quedarse vacío mientras escribes y, al enfocarlo, se selecciona el valor entero.
+- **change(sindicato):** el reparto por defecto pasa de **4-2-1-0** a **3-2-1-0**, que es la convención más habitual (con 3 jugadores, 3-2-1). No afecta a ninguna partida existente: todas las partidas de sindicato guardan su propio reparto.
 - **fix(partidas):** "Guardar en mis jugadores" no daba **ninguna señal** de haber guardado (el botón solo desaparecía) y, si la llamada fallaba, el error iba solo a la consola. Ahora se muestra "Guardado en mis jugadores" con un check cuando el jugador está en la lista, y el motivo del error si falla. Esto hacía creer que no se guardaba nada: en realidad se guardaba, pero con los valores que hubiera en ese momento en el formulario — si luego cambiabas handicap o nombre, esos cambios no llegaban al jugador guardado.
 - **feat(rondas):** un hoyo ya grabado queda **bloqueado** (golpes y putts en solo lectura) para no tocarlo sin querer al pasar por él. El estado pasa a mostrar "Hoyo guardado (bloqueado)" con candado y aparece un botón **Reabrir hoyo** que desbloquea la edición; al volver a guardar se bloquea de nuevo, igual que al cambiar de hoyo.
 

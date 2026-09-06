@@ -91,6 +91,42 @@ const COURSE_LENGTHS: { value: CourseLength; label: string }[] = [
   { value: "back9", label: "Ultimos 9 (10-18)" },
 ];
 
+/**
+ * Numeric input that can be cleared while typing.
+ * A plain controlled number input snaps an empty field back to "0", so the 0
+ * stays in front of whatever you type next; here the field may sit empty and
+ * the value is only committed once it parses (restored on blur if left empty).
+ */
+function PointsInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+
+  return (
+    <Input
+      type="number"
+      min={0}
+      inputMode="numeric"
+      value={text}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        setText(e.target.value);
+        const parsed = parseInt(e.target.value, 10);
+        if (!isNaN(parsed)) onChange(Math.max(0, parsed));
+      }}
+      onBlur={() => setText(String(value))}
+    />
+  );
+}
+
 export function RoundSetup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -942,13 +978,11 @@ export function RoundSetup() {
                   {sindicatoPoints.map((points, index) => (
                     <div key={index} className="space-y-1">
                       <Label className="text-xs">{index + 1}o</Label>
-                      <Input
-                        type="number"
-                        min={0}
+                      <PointsInput
                         value={points}
-                        onChange={(e) => {
+                        onChange={(value) => {
                           const newPoints = [...sindicatoPoints];
-                          newPoints[index] = parseInt(e.target.value) || 0;
+                          newPoints[index] = value;
                           setSindicatoPoints(newPoints);
                         }}
                       />

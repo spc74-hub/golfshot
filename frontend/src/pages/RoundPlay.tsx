@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { LogOut, Trash2, Save, ClipboardList, Share2, Copy, Check, Users, Lock, Unlock } from "lucide-react";
 import type { Player, HoleData, Score } from "@/types";
-import { SCORE_COLORS, DEFAULT_PUTTS } from "@/types";
+import { SCORE_COLORS, DEFAULT_PUTTS, DEFAULT_SINDICATO_POINTS } from "@/types";
 
 export function RoundPlay() {
   const [searchParams] = useSearchParams();
@@ -122,6 +122,19 @@ export function RoundPlay() {
     if (!course) return null;
     return course.holesData.find((h: HoleData) => h.number === currentHole) || null;
   }, [course, currentHole]);
+
+  // Start on the round's saved hole. Without this a back9 round always opened
+  // on hole 1 (which is not even part of the round) and needed a "Siguiente".
+  const didInitHoleRef = useRef(false);
+  useEffect(() => {
+    if (!round || didInitHoleRef.current) return;
+    didInitHoleRef.current = true;
+    const roundHoles = getHolesForCourseLength(round.courseLength);
+    const savedHole = round.currentHole;
+    setCurrentHole(
+      savedHole && roundHoles.includes(savedHole) ? savedHole : roundHoles[0]
+    );
+  }, [round]);
 
   // Initialize scores from round data - only when currentHole changes
   // Use a ref to track the last processed hole to prevent polling from overwriting changes
@@ -380,7 +393,7 @@ export function RoundPlay() {
           playersWithEffectiveHcp,
           holeNum,
           patchedHolesData,
-          round.sindicatoPoints || [4, 2, 1, 0],
+          round.sindicatoPoints || DEFAULT_SINDICATO_POINTS,
           totalHoles,
         );
         total += sindicatoPoints.get(player.id) || 0;

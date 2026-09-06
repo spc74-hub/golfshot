@@ -207,7 +207,7 @@ export function calculateSindicatoPoints(
   players: Player[],
   holeNumber: number,
   holesData: HoleData[],
-  pointsConfig: number[] = [4, 2, 1, 0],
+  pointsConfig: number[] = [3, 2, 1, 0],
   totalHoles: number = 18,
 ): Map<string, number> {
   const holeData = holesData.find((h) => h.number === holeNumber);

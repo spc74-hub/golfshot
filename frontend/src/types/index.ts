@@ -260,7 +260,7 @@ export type StablefordResult = ScoreResult;
 // Default values
 export const DEFAULT_HANDICAP_INDEX = 24.0;
 export const DEFAULT_PUTTS = 2;
-export const DEFAULT_SINDICATO_POINTS = [4, 2, 1, 0];
+export const DEFAULT_SINDICATO_POINTS = [3, 2, 1, 0];
 export const DEFAULT_HANDICAP_PERCENTAGE = 100;
 
 // External course search result type
