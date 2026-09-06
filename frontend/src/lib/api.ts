@@ -111,6 +111,26 @@ function transformPlayerToBackend(player: Round["players"][0]): Record<string, u
   };
 }
 
+/**
+ * The Cloudflare Access session expired: Access answers with a 302 to its own
+ * login page, so the request never reaches the backend. Only a page reload can
+ * renew it (Cloudflare has to run its own flow and re-inject the assertion).
+ */
+export class SessionExpiredError extends Error {
+  constructor() {
+    super("Tu sesion ha caducado. Recarga la app para volver a entrar.");
+    this.name = "SessionExpiredError";
+  }
+}
+
+/** The request never left the device (no coverage, airplane mode, flaky link). */
+export class NetworkError extends Error {
+  constructor() {
+    super("Sin conexion. No se ha podido contactar con el servidor.");
+    this.name = "NetworkError";
+  }
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = localStorage.getItem("access_token");
 
@@ -123,10 +143,30 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${url}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    // redirect: "manual" so an expired Cloudflare Access session surfaces as an
+    // opaque redirect we can name, instead of the browser following the 302 to
+    // cloudflareaccess.com and failing with an unhelpful CORS/network error.
+    response = await fetch(`${API_URL}${url}`, {
+      ...options,
+      headers,
+      redirect: "manual",
+    });
+  } catch {
+    throw new NetworkError();
+  }
+
+  // In the browser a blocked redirect arrives as an opaque response (status 0);
+  // other runtimes hand back the 3xx itself. The API never redirects on its own,
+  // so any of these means Access (or a proxy) intercepted the call.
+  const isRedirect =
+    response.type === "opaqueredirect" ||
+    response.status === 0 ||
+    (response.status >= 300 && response.status < 400);
+  if (isRedirect) {
+    throw new SessionExpiredError();
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: "An error occurred" }));

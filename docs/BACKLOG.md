@@ -33,5 +33,7 @@
 - [ ] **README desactualizado** — El README.md aún referencia Supabase como backend, pero se migró a PostgreSQL + SQLAlchemy self-hosted
 
 ## Completado recientemente
+- [x] **Sesion de Cloudflare Access caducada a media partida** — Las llamadas a `/api` se quedaban en un 302 de Access sin llegar al backend y la app mostraba "Error al guardar". Ahora se detecta y se ofrece "Reconectar" (2026-09-06)
+- [x] **Un guardado fallido perdia el hoyo** — Los golpes y putts sin guardar se conservan en el movil y se restauran al volver a entrar (2026-09-06)
 - [x] **Putts con valor 0** — Permitir registrar 0 putts cuando la bola entra desde fuera del green (2026-05-17)
 - [x] **Reabrir partida finalizada** — Endpoint y UI para reabrir y editar una partida ya finalizada (2026-05-17)

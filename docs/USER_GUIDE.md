@@ -108,6 +108,11 @@ La pantalla principal muestra:
   - ⚪ Doble bogey
   - ⚫ Triple bogey o peor
 
+### Si falla el guardado
+- **"Tu sesión ha caducado"**: la sesión de Cloudflare Access expira sola pasado un tiempo y, a partir de ahí, la app no puede hablar con el servidor. Pulsa **Reconectar**, vuelve a validar el acceso y guarda otra vez.
+- **"Sin conexión"**: no hay cobertura. Espera a tenerla y pulsa de nuevo **Guardar Hoyo**.
+- En los dos casos **los golpes y putts que hayas metido no se pierden**: quedan guardados en el móvil y se restauran al volver a entrar en la partida, con el hoyo marcado como "Cambios sin guardar".
+
 ### Bloqueo y reapertura de un hoyo
 - Al pulsar **💾 Guardar Hoyo** el hoyo queda grabado y **bloqueado**: los golpes y los putts pasan a solo lectura y el estado muestra "Hoyo guardado (bloqueado)" con un candado.
 - Así no se cambian resultados sin querer al volver a pasar por un hoyo ya jugado.

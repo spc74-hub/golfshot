@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useRound, useUpdateRound, useFinishRound, useDeleteRound } from "@/hooks/useRounds";
 import { useCourse } from "@/hooks/useCourses";
-import { roundsApi } from "@/lib/api";
+import { roundsApi, SessionExpiredError, NetworkError } from "@/lib/api";
 import {
   calculateStablefordPoints,
   calculateSindicatoPoints,
@@ -35,9 +35,42 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LogOut, Trash2, Save, ClipboardList, Share2, Copy, Check, Users, Lock, Unlock } from "lucide-react";
+import { LogOut, Trash2, Save, ClipboardList, Share2, Copy, Check, Users, Lock, Unlock, RefreshCw } from "lucide-react";
 import type { Player, HoleData, Score } from "@/types";
 import { SCORE_COLORS, DEFAULT_PUTTS, DEFAULT_SINDICATO_POINTS } from "@/types";
+
+/**
+ * Scores typed on a hole are kept on the device until the server confirms them.
+ * A round is played on a golf course, where coverage drops and the Cloudflare
+ * Access session can expire mid-round: a failed save must never cost the hole.
+ */
+const draftKey = (roundId: string, hole: number) =>
+  `golfshot:draft:${roundId}:${hole}`;
+
+function readDraft(roundId: string, hole: number): Record<string, Score> | null {
+  try {
+    const raw = localStorage.getItem(draftKey(roundId, hole));
+    return raw ? (JSON.parse(raw) as Record<string, Score>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(roundId: string, hole: number, scores: Record<string, Score>) {
+  try {
+    localStorage.setItem(draftKey(roundId, hole), JSON.stringify(scores));
+  } catch {
+    // Private mode or a full quota: the in-memory scores still work.
+  }
+}
+
+function clearDraft(roundId: string, hole: number) {
+  try {
+    localStorage.removeItem(draftKey(roundId, hole));
+  } catch {
+    // Nothing to do: the draft is a convenience, not the source of truth.
+  }
+}
 
 export function RoundPlay() {
   const [searchParams] = useSearchParams();
@@ -72,6 +105,8 @@ export function RoundPlay() {
   // A hole already saved stays locked until the user explicitly reopens it
   const [isHoleUnlocked, setIsHoleUnlocked] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // An expired Cloudflare Access session needs a reload, not a retry
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Share dialog state
@@ -152,11 +187,24 @@ export function RoundPlay() {
           scores[player.id] = { strokes: currentHoleData?.par || 4, putts: DEFAULT_PUTTS };
         }
       });
-      setPlayerScores(scores);
-      setIsHoleSaved(true); // New hole is considered "saved" initially
+
+      // A draft means a previous save never reached the server: keep what was
+      // typed instead of the (older) server values, still pending to be saved.
+      const draft = roundId ? readDraft(roundId, currentHole) : null;
+      const hasDraft = !!draft && round.players.every((p: Player) => draft[p.id]);
+
+      setPlayerScores(hasDraft ? draft : scores);
+      setIsHoleSaved(!hasDraft); // New hole is considered "saved" initially
       setIsHoleUnlocked(false); // Saved holes start locked
     }
-  }, [currentHole, round, currentHoleData?.par]);
+  }, [currentHole, round, currentHoleData?.par, roundId]);
+
+  // Keep unsaved scores on the device so a failed save (no coverage, expired
+  // session) cannot lose the hole — they are restored on the next load.
+  useEffect(() => {
+    if (!roundId || isHoleSaved || Object.keys(playerScores).length === 0) return;
+    writeDraft(roundId, currentHole, playerScores);
+  }, [playerScores, isHoleSaved, roundId, currentHole]);
 
   // Update strokes for a player
   const updateStrokes = useCallback((playerId: string, strokes: number) => {
@@ -178,12 +226,30 @@ export function RoundPlay() {
     setSaveError(null); // Clear any previous errors
   }, []);
 
+  // Turn a failed save into something actionable. The generic "intenta de nuevo"
+  // hid the two cases that actually happen on a course: no coverage, and an
+  // expired Cloudflare Access session (which only a reload can fix).
+  const reportSaveError = (error: unknown) => {
+    console.error("Error saving scores:", error);
+    if (error instanceof SessionExpiredError) {
+      setSessionExpired(true);
+      setSaveError("Tu sesion ha caducado.");
+    } else if (error instanceof NetworkError) {
+      setSessionExpired(false);
+      setSaveError("Sin conexion. Vuelve a intentarlo cuando tengas cobertura.");
+    } else {
+      setSessionExpired(false);
+      setSaveError("Error al guardar. Por favor, intenta de nuevo.");
+    }
+  };
+
   // Save current hole WITHOUT navigating
   const saveCurrentHole = async () => {
     if (!round || !roundId) return;
 
     setIsSaving(true);
     setSaveError(null);
+    setSessionExpired(false);
     try {
       // Build updated players with new scores
       const updatedPlayers = round.players.map((player: Player) => ({
@@ -209,9 +275,9 @@ export function RoundPlay() {
 
       setIsHoleSaved(true);
       setIsHoleUnlocked(false);
+      if (roundId) clearDraft(roundId, currentHole);
     } catch (error) {
-      console.error("Error saving scores:", error);
-      setSaveError("Error al guardar. Por favor, intenta de nuevo.");
+      reportSaveError(error);
     } finally {
       setIsSaving(false);
     }
@@ -300,9 +366,10 @@ export function RoundPlay() {
       });
 
       await finishRound.mutateAsync(roundId);
+      if (roundId) clearDraft(roundId, currentHole);
       navigate(`/round/card?id=${roundId}`);
     } catch (error) {
-      console.error("Error finishing round:", error);
+      reportSaveError(error);
     } finally {
       setIsSaving(false);
     }
@@ -541,10 +608,12 @@ export function RoundPlay() {
         },
       });
 
+      if (roundId) clearDraft(roundId, currentHole);
       setShowExitDialog(false);
       navigate("/");
     } catch (error) {
-      console.error("Error saving round:", error);
+      setShowExitDialog(false);
+      reportSaveError(error);
     } finally {
       setIsSaving(false);
     }
@@ -1000,7 +1069,22 @@ export function RoundPlay() {
               </span>
             )}
             {saveError && (
-              <span className="text-sm text-destructive">{saveError}</span>
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-sm text-destructive text-center">
+                  {saveError}
+                  {sessionExpired && " Los golpes de este hoyo estan guardados en el movil."}
+                </span>
+                {sessionExpired && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.location.reload()}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                    Reconectar
+                  </Button>
+                )}
+              </div>
             )}
             {!isSaving && !isHoleSaved && !saveError && (
               <span className="text-sm text-amber-600">Cambios sin guardar</span>
